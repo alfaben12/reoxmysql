@@ -1,27 +1,50 @@
 import type { CFXParameters } from '../types';
 import { convertNamedPlaceholders } from '../config';
 
-// Cache placeholder counts per query string to avoid re-running the regex on
-// every call with the same (repeated) query.  Clear-on-full keeps it bounded.
-const _placeholderCache = new Map<string, number>();
-const PLACEHOLDER_CACHE_MAX = 200;
+// Cache per query-string to avoid re-running the regex + two .includes() scans
+// on every call.  Both counts are pure functions of the query text, so once
+// seen they never need re-computing.  Clear-on-full keeps memory bounded.
+interface QueryMeta {
+  placeholders: number;
+  hasNamed: boolean;
+}
+const _queryMetaCache = new Map<string, QueryMeta>();
+const QUERY_META_CACHE_MAX = 500;
+
+function getQueryMeta(query: string): QueryMeta {
+  let meta = _queryMetaCache.get(query);
+  if (meta !== undefined) return meta;
+
+  meta = {
+    placeholders: query.match(/\?(?!\?)/g)?.length ?? 0,
+    hasNamed: query.indexOf(':') !== -1 || query.indexOf('@') !== -1,
+  };
+  if (_queryMetaCache.size >= QUERY_META_CACHE_MAX) _queryMetaCache.clear();
+  _queryMetaCache.set(query, meta);
+  return meta;
+}
 
 export const parseArguments = (query: string, parameters?: CFXParameters): [string, CFXParameters] => {
   if (typeof query !== 'string') throw new Error(`Expected query to be a string but received ${typeof query} instead.`);
 
-  if (convertNamedPlaceholders && parameters && typeof parameters === 'object' && !Array.isArray(parameters))
-    if (query.includes(':') || query.includes('@')) {
-      [query, parameters] = convertNamedPlaceholders(query, parameters);
-    }
+  const meta = getQueryMeta(query);
+  let placeholders = meta.placeholders;
+
+  if (
+    convertNamedPlaceholders &&
+    meta.hasNamed &&
+    parameters &&
+    typeof parameters === 'object' &&
+    !Array.isArray(parameters)
+  ) {
+    [query, parameters] = convertNamedPlaceholders(query, parameters);
+    // Recount after rewriting — the rewritten query no longer matches the
+    // cache key.  Named-placeholder queries are the slow path; the common
+    // `?` path hits the cached count directly above.
+    placeholders = query.match(/\?(?!\?)/g)?.length ?? 0;
+  }
 
   if (!parameters || typeof parameters === 'function') parameters = [];
-
-  let placeholders = _placeholderCache.get(query);
-  if (placeholders === undefined) {
-    placeholders = query.match(/\?(?!\?)/g)?.length ?? 0;
-    if (_placeholderCache.size >= PLACEHOLDER_CACHE_MAX) _placeholderCache.clear();
-    _placeholderCache.set(query, placeholders);
-  }
 
   if (parameters && !Array.isArray(parameters)) {
     let arr: unknown[] = [];

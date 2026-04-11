@@ -24,6 +24,14 @@ set re_mysql_connection_string "mysql://user:password@localhost/database"
 # Pool — default 25 sebenarnya sudah oke; naikkan ke 30-35 kalau mulai ada wait di pool
 set re_mysql_connection_limit  "30"
 
+# Idle pool: biarkan semua koneksi tetap warm (= connection_limit).
+# Kalau server kamu sering sepi di jam tertentu dan ingin MySQL lebih longgar,
+# turunin angka ini (contoh 10) supaya koneksi idle di-recycle.
+set re_mysql_max_idle_connections "30"
+
+# Koneksi idle yang lewat ambang ini (ms) akan ditutup.
+set re_mysql_idle_timeout "60000"
+
 # Kasih warning kalau ada query yang lebih dari 150 ms
 set re_mysql_slow_query_warning "150"
 
@@ -52,6 +60,13 @@ set re_mysql_connection_string "mysql://user:password@localhost/database?charset
 # Jangan sampai lewat dari max_connections milik MySQL.
 set re_mysql_connection_limit  "40"
 
+# Samakan dengan connection_limit biar semua koneksi tetap hangat (hot pool).
+set re_mysql_max_idle_connections "40"
+
+# 60 detik: koneksi idle yang lebih lama dari ini akan ditutup MySQL side.
+# Naikkan jadi 300000 (5 menit) kalau ada burst pattern di waktu tertentu.
+set re_mysql_idle_timeout "60000"
+
 # 0 = antrean tanpa batas
 # Jadi request akan nunggu, bukan langsung gagal saat ada lonjakan beban
 set re_mysql_queue_limit "0"
@@ -77,9 +92,12 @@ Bagian ini cocok kalau server sudah cukup sibuk dan kamu mulai peduli performa l
 
 ```cfg
 # ─── Connection String ───────────────────────────────────────────────────────
-# Pakai IP langsung, jangan hostname, biar tidak ada DNS lookup tiap koneksi
-# namedPlaceholders=false: cocok kalau semua query kamu pakai ? dan bukan :name
-set re_mysql_connection_string "mysql://user:password@127.0.0.1/database?charset=utf8mb4&namedPlaceholders=false&multipleStatements=false&connectTimeout=10000"
+# Pakai IP langsung (127.0.0.1 kalau co-located, atau IP LAN internal).
+# Jangan hostname biar tidak ada DNS lookup tiap koneksi.
+# namedPlaceholders=false: wajib untuk performa maksimal kalau semua query
+# pakai ? positional — fast path di parseArguments jadi zero-overhead.
+# compress=false: CPU di kedua sisi lebih penting dari bandwidth localhost.
+set re_mysql_connection_string "mysql://user:password@127.0.0.1/database?charset=utf8mb4&namedPlaceholders=false&multipleStatements=false&connectTimeout=10000&dateStrings=false&supportBigNumbers=true"
 
 # ─── Pool Size ───────────────────────────────────────────────────────────────
 # Jangan langsung naikin ke 200+ cuma karena player 2000.
@@ -97,8 +115,21 @@ set re_mysql_connection_string "mysql://user:password@127.0.0.1/database?charset
 # Di 2000 player dengan query rata-rata 2-5ms:
 #   500 QPS × 0.003s = 1.5 koneksi aktif rata-rata
 #   Burst 2000 QPS × 0.003s = 6 koneksi aktif
-# Sisanya cukup jadi buffer saat ada lonjakan
+# Sisanya cukup jadi buffer saat ada lonjakan.
+#
+# ReoxMySQL sudah cap batch execute ke 60% dari pool (= 45 dari 75).
+# Jadi 30 koneksi sisanya selalu tersedia buat SELECT query, tidak pernah starved.
 set re_mysql_connection_limit "75"
+
+# Samakan dengan connection_limit: semua koneksi tetap hot, tidak ada reconnect
+# overhead saat burst mendadak. Turunkan hanya kalau MySQL kamu sering kena
+# batas max_connections dan kamu butuh kasih "nafas" ke resource lain.
+set re_mysql_max_idle_connections "75"
+
+# 5 menit: idle yang lebih lama dari ini ditutup. Keep-alive TCP packet
+# tetap jalan tiap detik (keepAliveInitialDelay=0), jadi koneksi mati
+# lebih cepat ketahuan jauh sebelum timeout ini.
+set re_mysql_idle_timeout "300000"
 
 # Antrean tanpa batas
 # Kalau antrean sampai numpuk lebih dari 1 detik, itu tandanya DB server kamu mulai ngos-ngosan
@@ -117,9 +148,38 @@ set re_mysql_transaction_isolation_level "2"
 # ─── Production settings ─────────────────────────────────────────────────────
 set re_mysql_ui       "false"   # Matikan di production biar lebih ringan
 set re_mysql_log_size "0"       # Tidak kepakai kalau ui=false
-set re_mysql_debug    "false"   # Jangan nyalakan di production
+set re_mysql_debug    "false"   # Jangan nyalakan di production — matikan profiler per-query
 set re_mysql_versioncheck "false" # Boleh dimatikan biar hemat koneksi keluar
 ```
+
+### Kenapa konfigurasi ini efisien buat 2000+ player
+
+1. **Batch execute tidak monopoli pool.** `rawExecute` / `prepare` dengan banyak
+   parameter di-cap ke 60% pool (`floor(75 × 0.6) = 45`). Sisanya (30) selalu
+   bebas buat SELECT. Jadi query login/profile player tidak pernah nunggu batch
+   besar selesai.
+
+2. **`namedPlaceholders=false` ± fast-path.** Query parser skip scan `:` / `@`
+   dan langsung pakai cache placeholder count. Di 5,000 QPS ini = ~5,000 regex
+   + 10,000 `.includes()` call per detik yang hilang dari hot loop.
+
+3. **Promise pool ready.** Saat server baru mulai, resource lain yang manggil
+   query sebelum pool siap tidak bikin busy-wait loop — mereka langsung `await`
+   Promise, CPU tidur.
+
+4. **scheduleTick coalesced.** Berapa pun query yang kamu kirim di satu tick,
+   cuma satu `ScheduleResourceTick` native yang dipanggil.
+
+5. **Convar listener event-driven.** Tidak ada lagi `setInterval(setDebug, 1000)`
+   yang jalan seumur hidup server. Convar refresh cuma fire saat nilainya
+   benar-benar diubah pakai command.
+
+6. **Keep-alive instant.** `keepAliveInitialDelay=0` bikin koneksi mati
+   ketahuan sebelum ada user yang kena error.
+
+7. **Logger fast-path.** Di rawQuery, `logQuery()` cuma dipanggil kalau query
+   beneran lambat atau UI aktif. Query cepat (99%+ di server sehat) skip full
+   function call sama sekali.
 
 ### Kenapa bukan 200 koneksi?
 
@@ -303,6 +363,8 @@ ALTER TABLE apartments     ADD INDEX idx_owner (owner);
 | -------------------------------------- | --------- | ------- | ----------------------------------------------------------------------- |
 | `re_mysql_connection_string`           | string    | `""`    | URI koneksi MySQL atau format `key=value`. **Wajib diisi.**             |
 | `re_mysql_connection_limit`            | int       | `25`    | Maksimal koneksi simultan ke MySQL                                      |
+| `re_mysql_max_idle_connections`        | int       | `= limit` | Maksimal koneksi yang dipertahankan idle di pool                      |
+| `re_mysql_idle_timeout`                | int       | `60000` | Idle timeout (ms) — koneksi idle lebih lama dari ini ditutup            |
 | `re_mysql_queue_limit`                 | int       | `0`     | Maksimal antrean koneksi (0 = tanpa batas)                              |
 | `re_mysql_slow_query_warning`          | int       | `200`   | Ambang batas (ms) untuk warning slow query                              |
 | `re_mysql_resultset_warning`           | int       | `1000`  | Ambang batas jumlah baris untuk warning result set besar                |

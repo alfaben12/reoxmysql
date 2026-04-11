@@ -9,7 +9,7 @@ import { RowDataPacket } from 'mysql2';
 import { performance } from 'perf_hooks';
 import validateResultSet from 'utils/validateResultSet';
 import { runProfiler } from 'profiler';
-import { mysql_debug } from 'config';
+import { mysql_debug, mysql_slow_query_warning, mysql_ui } from 'config';
 
 export const rawQuery = async (
   type: QueryType,
@@ -33,7 +33,11 @@ export const rawQuery = async (
 
   try {
     const hasProfiler = mysql_debug && await runProfiler(connection, invokingResource);
-    const startTime = !hasProfiler && performance.now();
+    // Only measure time when something will actually consume it: profiler,
+    // slow-query warning, or the in-game UI.  Skipping performance.now() on
+    // the fast path removes a per-query call pair at high QPS.
+    const needTiming = hasProfiler || mysql_ui || mysql_slow_query_warning > 0;
+    const startTime = needTiming && !hasProfiler ? performance.now() : 0;
     const result = await connection.query(query, parameters);
 
     if (hasProfiler) {
@@ -43,7 +47,11 @@ export const rawQuery = async (
 
       if (profiler[0]) logQuery(invokingResource, query, parseFloat(profiler[0].duration), parameters);
     } else if (startTime) {
-      logQuery(invokingResource, query, performance.now() - startTime, parameters);
+      const elapsed = performance.now() - startTime;
+      // Inline gate: skip the logQuery call entirely on the fast path so we
+      // don't pay function-call + argument-marshal overhead on every SELECT.
+      if (elapsed >= mysql_slow_query_warning || mysql_ui)
+        logQuery(invokingResource, query, elapsed, parameters);
     }
 
     validateResultSet(invokingResource, query, result);

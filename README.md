@@ -1,34 +1,34 @@
-# oxmysql
+# ReoxMySQL
 
 A FiveM resource to communicate with a MySQL database using [node-mysql2](https://github.com/sidorares/node-mysql2).
 
-![](https://img.shields.io/github/downloads/communityox/oxmysql/total?logo=github)
-![](https://img.shields.io/github/downloads/communityox/oxmysql/latest/total?logo=github)
-![](https://img.shields.io/github/contributors/communityox/oxmysql?logo=github)
-![](https://img.shields.io/github/v/release/communityox/oxmysql?logo=github) 
+This repository is a custom project based on [oxmysql](https://github.com/communityox/oxmysql), updated for this community's needs. It keeps the general purpose of oxmysql, but some compatibility layers and behavior are intentionally different in `reoxmysql`.
 
-## 🔗 Links
-- 💾 [Download](https://github.com/communityox/oxmysql/releases/latest/download/oxmysql.zip)
-  - Download the latest release directly.
-- 📚 [Documentation](https://coxdocs.dev/oxmysql)
-  - For installation, setup, and everything else.
-- 📦 [npm](https://www.npmjs.com/package/@communityox/oxmysql)
-  - Use our npm package for enhanced functionality and TypeScript support.
+## Links
 
-## ✨ Features
+- [CHANGES.md](CHANGES.md)
+  - Changelog and detailed differences from oxmysql.
+- [RECOMENDED_CONF.en.md](RECOMENDED_CONF.en.md)
+  - Recommended configuration in English.
+- [RECOMENDED_CONF.id.md](RECOMENDED_CONF.id.md)
+  - Recommended configuration in Indonesian.
 
-- Support for mysql-async and ghmattimysql syntax.
+## Features
+
 - Promises / async query handling allowing for non-blocking and awaitable responses.
-- Improved performance and stability compared to other options.
+- Improved performance and stability for the custom `reoxmysql` implementation.
 - Support for named and unnamed placeholders, improving performance and security.
 - Support for URI connection strings and semicolon separated values.
 - Improved parameter checking and error handling.
 
-## 🧾 Logging
+## Important Notes
 
-We have included a module for submitting error logs to [Fivemanage](https://fivemanage.com/?ref=overextended), a cloud management service tailored for game servers. Additional logging options and support for other services will be available in the future.
+- This resource name is `reoxmysql`, not `oxmysql`.
+- All convars use the `re_mysql_*` prefix.
+- Legacy compatibility for `mysql-async` and `ghmattimysql` is not included.
+- If a feature or behavior is specific to this fork, check `CHANGES.md` first.
 
 ## Lua Language Server
 
 - Install [Lua Language Server](https://marketplace.visualstudio.com/items?itemName=sumneko.lua) to ease development with annotations, type checking, diagnostics, and more.
-- See [ox_types](https://github.com/communityox/ox_types) for our Lua type definitions.
+- See [ox_types](https://github.com/communityox/ox_types) for Lua type definitions that may still be useful for development.

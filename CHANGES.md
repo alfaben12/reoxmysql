@@ -7,20 +7,26 @@
 
 ## Ringkasan Perbedaan dari OxMySQL
 
-| Aspek                         | OxMySQL                        | ReoxMySQL                         |
-| ----------------------------- | ------------------------------ | --------------------------------- |
-| Nama resource                 | `oxmysql`                      | `reoxmysql`                       |
-| Prefix konvar                 | `mysql_*`                      | `re_mysql_*`                      |
-| Kompatibilitas `mysql-async`  | Ya (`provide`)                 | **Tidak**                         |
-| Kompatibilitas `ghmattimysql` | Ya (`provide`)                 | **Tidak**                         |
-| Batch execute                 | Unbounded `Promise.all`        | Worker-pool dengan cap 60% pool   |
-| Busy-wait pool                | `while (!pool) await sleep(0)` | `await poolReady` (Promise)       |
-| `typeCast` pada `query()`     | Tidak                          | Ya                                |
-| Cache regex placeholder       | Tidak                          | Ya (Map, max 200 entry)           |
-| Scalar value extraction       | `Object.values(row)[0]`        | `for...in` (zero alloc)           |
-| Log trim strategy             | `splice(0,1)` per insert O(n)  | `slice()` per N inserts amortized |
-| Koneksi keep-alive            | Tidak dikonfigurasi            | `enableKeepAlive: true, 10s`      |
-| Dokumentasi konfigurasi       | Tidak ada                      | `RECOMENDED_CONF.md`              |
+| Aspek                         | OxMySQL                        | ReoxMySQL                                |
+| ----------------------------- | ------------------------------ | ---------------------------------------- |
+| Nama resource                 | `oxmysql`                      | `reoxmysql`                              |
+| Prefix konvar                 | `mysql_*`                      | `re_mysql_*`                             |
+| Kompatibilitas `mysql-async`  | Ya (`provide`)                 | **Tidak**                                |
+| Kompatibilitas `ghmattimysql` | Ya (`provide`)                 | **Tidak**                                |
+| Batch execute                 | Unbounded `Promise.all`        | Worker-pool dengan cap 60% pool          |
+| Busy-wait pool                | `while (!pool) await sleep(0)` | `await poolReady` (Promise)              |
+| `typeCast` pada `query()`     | Tidak                          | Ya                                       |
+| Cache regex placeholder       | Tidak                          | Ya (query meta cache, max 500 entry)     |
+| Cache scan named placeholder  | `.includes(':')` per call      | Cached bareng placeholder count          |
+| `parseExecute` normalisasi    | 2-3 pass (`every` × 2)         | Single-pass classify + build             |
+| `scheduleTick` coalescing     | Fire per query                 | Coalesced per tick                       |
+| Convar refresh                | `setInterval(1000)` polling    | `AddConvarChangeListener` event-driven   |
+| Logger fast-path              | Fungsi selalu dipanggil        | Gate inline, skip di rawQuery hot path   |
+| Scalar value extraction       | `Object.values(row)[0]`        | `for...in` (zero alloc)                  |
+| Log trim strategy             | `splice(0,1)` per insert O(n)  | `slice()` per N inserts amortized        |
+| Koneksi keep-alive            | Tidak dikonfigurasi            | `enableKeepAlive: true`, delay **0 ms**  |
+| Pool idle tuning              | Tidak ada                      | `re_mysql_max_idle_connections` + `re_mysql_idle_timeout` |
+| Dokumentasi konfigurasi       | Tidak ada                      | `RECOMENDED_CONF.md`                     |
 
 ---
 
@@ -243,6 +249,216 @@ return null;
 ```
 
 Tidak ada alokasi memory per scalar query.
+
+---
+
+### Convar Refresh: Event-Driven, Bukan Polling
+
+**File:** `src/database/index.ts`
+
+**Masalah sebelumnya:**
+
+```typescript
+setInterval(() => {
+  setDebug();
+}, 1000);
+```
+
+Setiap detik, selama uptime server, `setDebug()` dijalankan — yang berarti
+beberapa panggilan `GetConvar`, kemungkinan `JSON.parse`, dan pembuatan array
+baru. Di server yang running berminggu-minggu, ini beban sia-sia karena 99,99%
+panggilan tidak menemukan perubahan apa pun.
+
+**Solusi:**
+
+```typescript
+if (typeof AddConvarChangeListener === 'function') {
+  AddConvarChangeListener('re_mysql_*', () => setDebug());
+} else {
+  setInterval(setDebug, 5000); // fallback untuk server build lama
+}
+```
+
+`AddConvarChangeListener` native hanya memicu callback ketika convar benar-benar
+berubah — mis. admin mengeksekusi `setr re_mysql_debug true`. Pada server stabil,
+callback mungkin tidak pernah berjalan sama sekali. CPU kembali ke 0.
+
+---
+
+### scheduleTick: Coalesce per Tick
+
+**File:** `src/utils/scheduleTick.ts`
+
+**Masalah sebelumnya:**
+
+```typescript
+export function scheduleTick() {
+  ScheduleResourceTick(resourceName);
+}
+```
+
+Setiap `rawQuery`/`rawExecute` memanggil `scheduleTick`, dan setiap panggilan
+menyeberangi boundary JS → native. Pada 5.000 QPS, itu 5.000 native call/detik
+yang sebagian besar redundant — `ScheduleResourceTick` hanya perlu dipanggil
+sekali per tick untuk membangunkan resource.
+
+**Solusi:**
+
+```typescript
+let _scheduled = false;
+export function scheduleTick() {
+  if (_scheduled) return;
+  _scheduled = true;
+  ScheduleResourceTick(resourceName);
+  setImmediate(() => { _scheduled = false; });
+}
+```
+
+Setiap tick sekarang paling banyak memanggil native satu kali. Banyak query
+yang di-issue dari handler yang sama (mis. semua SELECT di satu `onPlayerJoin`)
+share satu native call. Pada burst 5.000 QPS yang menghantam ~30 tick, itu
+~99,4% pemotongan native call.
+
+---
+
+### Logger Fast-Path pada rawQuery
+
+**File:** `src/database/rawQuery.ts`
+
+**Masalah sebelumnya:**
+`rawQuery` tanpa syarat memanggil `logQuery(...)` setelah setiap query. Gate
+slow-query ada *di dalam* `logQuery`. Artinya overhead panggilan fungsi +
+argument marshal (`invokingResource`, `query`, `elapsed`, `parameters`) selalu
+dibayar bahkan ketika tidak ada yang akan di-log.
+
+**Solusi:**
+
+```typescript
+} else if (startTime) {
+  const elapsed = performance.now() - startTime;
+  if (elapsed >= mysql_slow_query_warning || mysql_ui)
+    logQuery(invokingResource, query, elapsed, parameters);
+}
+```
+
+Inlined gate. Query cepat (yang merupakan jalur panas di server sehat, >99%)
+melewati panggilan `logQuery` sepenuhnya. Hanya slow query atau mode UI yang
+masuk ke logger. `rawExecute` sudah menggunakan pola ini; `rawQuery` sekarang
+konsisten.
+
+Di sisi lain, `performance.now()` sekarang juga hanya dipanggil ketika ada
+konsumen untuk angka tersebut (profiler aktif, UI on, atau
+`mysql_slow_query_warning > 0`).
+
+---
+
+### parseArguments: Query Meta Cache
+
+**File:** `src/utils/parseArguments.ts`
+
+Cache placeholder sebelumnya hanya menyimpan jumlah `?`. Scan `query.includes(':')`
+dan `query.includes('@')` untuk deteksi named-placeholder masih berjalan pada
+setiap pemanggilan — dua full string scan per query.
+
+Cache baru menyimpan **meta query** (jumlah placeholder + flag named) dalam satu
+entry, memperluas kapasitas ke 500 entri, dan meng-skip scan `.includes` pada
+cache hit:
+
+```typescript
+interface QueryMeta {
+  placeholders: number;
+  hasNamed: boolean;
+}
+const _queryMetaCache = new Map<string, QueryMeta>();
+
+function getQueryMeta(query: string): QueryMeta {
+  let meta = _queryMetaCache.get(query);
+  if (meta !== undefined) return meta;
+  meta = {
+    placeholders: query.match(/\?(?!\?)/g)?.length ?? 0,
+    hasNamed: query.indexOf(':') !== -1 || query.indexOf('@') !== -1,
+  };
+  _queryMetaCache.set(query, meta);
+  return meta;
+}
+```
+
+Pada server ESX/QB dengan ~50-200 query unik yang diulang ribuan kali per menit,
+cache hit rate efektif mendekati 100% setelah warm-up.
+
+---
+
+### parseExecute: Single-Pass Normalisasi
+
+**File:** `src/utils/parseExecute.ts`
+
+**Masalah sebelumnya:**
+Untuk mengklasifikasikan bentuk parameter batch, kode lama menjalankan tiga
+traversal berturut-turut:
+
+```typescript
+if (!parameters.every(Array.isArray)) {
+  if (parameters.every((item) => typeof item === 'object')) {
+    parameters.forEach((value, index) => { ... Object.entries(value).forEach(...) });
+```
+
+Dua `.every()` yang berpotensi scan seluruh array + `Object.entries` yang
+mengalokasikan array `[key, value][]` yang langsung dibuang.
+
+**Solusi:**
+
+```typescript
+let allArrays = true;
+let allObjects = true;
+for (let i = 0; i < len; i++) {
+  const item = parameters[i];
+  if (!Array.isArray(item)) allArrays = false;
+  if (typeof item !== 'object' || item === null) { allObjects = false; break; }
+}
+if (allArrays) return parameters;
+if (allObjects) { /* single build pass pakai for..in, bukan Object.entries */ }
+```
+
+Satu scan untuk klasifikasi, satu allocation pass untuk build. `for..in` pada
+object parameter tidak mengalokasikan `[key, value]` array. Pada batch insert
+besar (mis. vehicle save 100 mobil), penghematan alokasi mulai terasa di GC.
+
+---
+
+### Pool: maxIdle, idleTimeout, keepAlive 0 ms
+
+**File:** `src/database/pool.ts`
+
+Dua convar baru dan penyesuaian keep-alive:
+
+```typescript
+const maxIdle = GetConvarInt('re_mysql_max_idle_connections', connectionLimit);
+const idleTimeout = GetConvarInt('re_mysql_idle_timeout', 60000);
+
+createPool({
+  ...config,
+  connectionLimit,
+  waitForConnections: true,
+  queueLimit,
+  maxIdle,
+  idleTimeout,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0, // dari 10_000 — deteksi socket mati lebih cepat
+});
+```
+
+- `re_mysql_max_idle_connections` memberi ops kontrol atas berapa banyak socket
+  yang ditahan saat quiet hours — penting untuk ops yang menjalankan banyak
+  resource FiveM di satu instance MySQL.
+- `re_mysql_idle_timeout` mengeluarkan koneksi idle yang sudah lewat ambang
+  batas supaya `wait_timeout` MySQL tidak memutuskannya diam-diam.
+- `keepAliveInitialDelay: 0` mengirim TCP keep-alive probe pertama segera
+  setelah socket idle, bukan menunggu 10 detik. Window di mana pool bisa
+  membagikan koneksi mati setelah outage jaringan ditutup.
+
+Default `maxIdle = connectionLimit` sehingga perilaku lama (pertahankan
+seluruh pool hangat) tetap jadi default — tidak ada regressi untuk instalasi
+yang sudah ada.
 
 ---
 

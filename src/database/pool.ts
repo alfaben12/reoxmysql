@@ -15,6 +15,12 @@ export async function createConnectionPool() {
   const config = getConnectionOptions();
   const connectionLimit = GetConvarInt('re_mysql_connection_limit', 25);
   const queueLimit = GetConvarInt('re_mysql_queue_limit', 0);
+  // New tunables — allow ops to cap idle connections and recycle them when
+  // the server is quiet, instead of holding `connectionLimit` live sockets
+  // to MySQL forever.  Defaults preserve prior behaviour (keep everything
+  // warm) but high-churn deployments can opt-in to tighter recycling.
+  const maxIdle = GetConvarInt('re_mysql_max_idle_connections', connectionLimit);
+  const idleTimeout = GetConvarInt('re_mysql_idle_timeout', 60000);
 
   try {
     const dbPool = createPool({
@@ -22,8 +28,13 @@ export async function createConnectionPool() {
       connectionLimit,
       waitForConnections: true,
       queueLimit,
+      maxIdle,
+      idleTimeout,
       enableKeepAlive: true,
-      keepAliveInitialDelay: 10000,
+      // 0 = first keep-alive packet fires immediately once a socket goes idle.
+      // At 10 s the server could hand out a dead socket during the first
+      // keep-alive window after an outage; 0 closes that gap with no cost.
+      keepAliveInitialDelay: 0,
     });
 
     dbPool.on('connection', (connection) => {
@@ -34,7 +45,9 @@ export async function createConnectionPool() {
     dbVersion = `^5[${result[0].version}]`;
 
     console.log(`${dbVersion} ^2Database server connection established!^0`);
-    console.log(`^2Pool: ${connectionLimit} connections, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}^0`);
+    console.log(
+      `^2Pool: ${connectionLimit} max, ${maxIdle} idle, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms^0`
+    );
 
     if (config.multipleStatements) {
       console.warn(`multipleStatements is enabled. Used incorrectly, this option may cause SQL injection.`);
