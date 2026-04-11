@@ -9,7 +9,7 @@ const endpoint = 'https://api.fivemanage.com/api/logs/batch';
 const headers = {
   ['Content-Type']: 'application/json',
   ['Authorization']: apiKey,
-  ['User-Agent']: 'oxmysql',
+  ['User-Agent']: 'reoxmysql',
 };
 
 async function sendLogs() {

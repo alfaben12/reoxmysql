@@ -41,12 +41,12 @@
     {
       action: 'openUI',
       data: {
-        resources: ['ox_core', 'oxmysql', 'ox_inventory', 'ox_doorlock', 'ox_lib', 'ox_vehicleshop', 'ox_target'],
+        resources: ['ox_core', 'reoxmysql', 'ox_inventory', 'ox_doorlock', 'ox_lib', 'ox_vehicleshop', 'ox_target'],
         slowQueries: 13,
         totalQueries: 332,
         totalTime: 230123,
         chartData: {
-          labels: ['oxmysql', 'ox_core', 'ox_inventory', 'ox_doorlock'],
+          labels: ['reoxmysql', 'ox_core', 'ox_inventory', 'ox_doorlock'],
           data: [
             { queries: 25, time: 133 },
             { queries: 5, time: 12 },

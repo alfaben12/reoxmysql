@@ -127,3 +127,4 @@ dist
 lib/MySQL.js
 lib/MySQL.d.ts
 lib/MySQL.js.map
+*.lock
