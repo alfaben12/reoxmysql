@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 
 (() => {
-  if (GetConvarInt('mysql_versioncheck', 1) === 0) return;
+  if (GetConvarInt('re_mysql_versioncheck', 1) === 0) return;
 
   const resourceName = GetCurrentResourceName();
   const currentVersion = GetResourceMetadata(resourceName, 'version', 0)?.match(/(\d+)\.(\d+)\.(\d+)/);

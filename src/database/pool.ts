@@ -13,8 +13,8 @@ export const poolReady = new Promise<void>((resolve) => {
 
 export async function createConnectionPool() {
   const config = getConnectionOptions();
-  const connectionLimit = GetConvarInt('mysql_connection_limit', 25);
-  const queueLimit = GetConvarInt('mysql_queue_limit', 0);
+  const connectionLimit = GetConvarInt('re_mysql_connection_limit', 25);
+  const queueLimit = GetConvarInt('re_mysql_queue_limit', 0);
 
   try {
     const dbPool = createPool({

@@ -3,7 +3,7 @@ import type { CFXCallback, CFXParameters } from '../types';
 import { dbVersion } from '../database';
 
 let loggerResource = '';
-let loggerService = GetConvar('mysql_logger_service', '');
+let loggerService = GetConvar('re_mysql_logger_service', '');
 
 if (loggerService) {
   if (loggerService.startsWith('@')) {

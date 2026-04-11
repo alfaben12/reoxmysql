@@ -15,7 +15,7 @@ import { mysql_debug, mysql_slow_query_warning, mysql_ui } from 'config';
 let _batchConcurrencyLimit = 0;
 function getBatchLimit(): number {
   if (!_batchConcurrencyLimit) {
-    _batchConcurrencyLimit = Math.max(4, Math.floor(GetConvarInt('mysql_connection_limit', 25) * 0.6));
+    _batchConcurrencyLimit = Math.max(4, Math.floor(GetConvarInt('re_mysql_connection_limit', 25) * 0.6));
   }
   return _batchConcurrencyLimit;
 }

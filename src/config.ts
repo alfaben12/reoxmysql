@@ -1,9 +1,9 @@
 import type { ConnectionOptions } from 'mysql2';
 import { typeCast } from './utils/typeCast';
 
-export const mysql_connection_string = GetConvar('mysql_connection_string', '');
-export let mysql_ui = GetConvar('mysql_ui', 'false') === 'true';
-export let mysql_slow_query_warning = GetConvarInt('mysql_slow_query_warning', 200);
+export const mysql_connection_string = GetConvar('re_mysql_connection_string', '');
+export let mysql_ui = GetConvar('re_mysql_ui', 'false') === 'true';
+export let mysql_slow_query_warning = GetConvarInt('re_mysql_slow_query_warning', 200);
 export let mysql_debug: boolean | string[] = false;
 
 // max array size of individual resource query logs
@@ -11,22 +11,22 @@ export let mysql_debug: boolean | string[] = false;
 export let mysql_log_size = 0;
 
 export function setDebug() {
-  mysql_ui = GetConvar('mysql_ui', 'false') === 'true';
-  mysql_slow_query_warning = GetConvarInt('mysql_slow_query_warning', 200);
+  mysql_ui = GetConvar('re_mysql_ui', 'false') === 'true';
+  mysql_slow_query_warning = GetConvarInt('re_mysql_slow_query_warning', 200);
 
   try {
-    const debug = GetConvar('mysql_debug', 'false');
+    const debug = GetConvar('re_mysql_debug', 'false');
     mysql_debug = debug === 'false' ? false : JSON.parse(debug);
   } catch (e) {
     mysql_debug = true;
   }
 
-  mysql_log_size = mysql_debug ? 10000 : GetConvarInt('mysql_log_size', 100);
+  mysql_log_size = mysql_debug ? 10000 : GetConvarInt('re_mysql_log_size', 100);
 }
 
 export const mysql_transaction_isolation_level = (() => {
   const query = 'SET TRANSACTION ISOLATION LEVEL';
-  switch (GetConvarInt('mysql_transaction_isolation_level', 2)) {
+  switch (GetConvarInt('re_mysql_transaction_isolation_level', 2)) {
     case 1:
       return `${query} REPEATABLE READ`;
     case 2:
@@ -122,7 +122,7 @@ RegisterCommand(
       case 'add':
         if (!Array.isArray(mysql_debug)) mysql_debug = [];
         mysql_debug.push(args[1]);
-        SetConvar('mysql_debug', JSON.stringify(mysql_debug));
+        SetConvar('re_mysql_debug', JSON.stringify(mysql_debug));
         return console.log(`^3Added ${args[1]} to mysql_debug^0`);
 
       case 'remove':
@@ -131,7 +131,7 @@ RegisterCommand(
           if (index === -1) return;
           mysql_debug.splice(index, 1);
           if (mysql_debug.length === 0) mysql_debug = false;
-          SetConvar('mysql_debug', JSON.stringify(mysql_debug) || 'false');
+          SetConvar('re_mysql_debug', JSON.stringify(mysql_debug) || 'false');
           return console.log(`^3Removed ${args[1]} from mysql_debug^0`);
         }
 
