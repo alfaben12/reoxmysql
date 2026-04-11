@@ -47,7 +47,7 @@ files {
 
 ui_page 'web/build/index.html'
 
-convar_category 'ReOxMySQL' {
+convar_category 'ReoxMySQL' {
 	'Configuration',
 	{
 		{ 'Connection string', 're_mysql_connection_string', 'CV_STRING', 'mysql://user:password@localhost/database' },
