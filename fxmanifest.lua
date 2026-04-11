@@ -1,0 +1,34 @@
+fx_version 'cerulean'
+game 'common'
+use_experimental_fxv2_oal 'yes'
+lua54 'yes'
+node_version '22'
+
+name 'reoxmysql'
+author 'Overextended'
+version '2.13.1'
+license 'LGPL-3.0-or-later'
+repository 'git+https://github.com/alfaben12/reoxmysql.git'
+description 'FXServer to MySQL communication via node-mysql2'
+
+dependencies {
+    '/server:12913',
+}
+
+client_script 'ui.lua'
+server_script 'dist/build.js'
+
+files {
+	'web/build/index.html',
+	'web/build/**/*'
+}
+
+ui_page 'web/build/index.html'
+
+convar_category 'ReOxMySQL' {
+	'Configuration',
+	{
+		{ 'Connection string', 're_mysql_connection_string', 'CV_STRING', 'mysql://user:password@localhost/database' },
+		{ 'Debug', 're_mysql_debug', 'CV_BOOL', 'false' }
+	}
+}
