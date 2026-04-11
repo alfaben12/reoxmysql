@@ -22,12 +22,16 @@ This repository is a custom project based on [oxmysql](https://github.com/commun
 - Support for named and unnamed placeholders, improving performance and security.
 - Support for URI connection strings and semicolon separated values.
 - Improved parameter checking and error handling.
+- **Can run alongside other MySQL resources**, allowing multiple resources to connect to the same or different databases simultaneously.
 
 ## Important Notes
 
 - This resource name is `reoxmysql`, not `oxmysql`.
 - All convars use the `re_mysql_*` prefix.
 - Legacy compatibility for `mysql-async` and `ghmattimysql` is not included.
+- This resource is designed to **co-exist with other database resources**, enabling flexible setups such as:
+  - Multiple resources connecting to the same database.
+  - Separate resources using different databases.
 - If a feature or behavior is specific to this fork, check `docs/CHANGES.en.md` or `docs/CHANGES.id.md` first.
 
 ## Lua Language Server
