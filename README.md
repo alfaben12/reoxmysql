@@ -1,5 +1,9 @@
 # ReoxMySQL
 
+<p align="center">
+  <img src="docs/REOX.png" alt="ReoxMySQL logo" width="160">
+</p>
+
 `reoxmysql` is a FiveM resource for MySQL access built on top of [`node-mysql2`](https://github.com/sidorares/node-mysql2).
 
 This project is a custom fork based on [`oxmysql` v2.13.1](https://github.com/communityox/oxmysql). It keeps the same general purpose, but some compatibility layers and runtime behavior are intentionally different.
