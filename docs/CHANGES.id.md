@@ -7,26 +7,26 @@
 
 ## Ringkasan Perbedaan dari OxMySQL
 
-| Aspek                         | OxMySQL                        | ReoxMySQL                                |
-| ----------------------------- | ------------------------------ | ---------------------------------------- |
-| Nama resource                 | `oxmysql`                      | `reoxmysql`                              |
-| Prefix konvar                 | `mysql_*`                      | `re_mysql_*`                             |
-| Kompatibilitas `mysql-async`  | Ya (`provide`)                 | **Tidak**                                |
-| Kompatibilitas `ghmattimysql` | Ya (`provide`)                 | **Tidak**                                |
-| Batch execute                 | Unbounded `Promise.all`        | Worker-pool dengan cap 60% pool          |
-| Busy-wait pool                | `while (!pool) await sleep(0)` | `await poolReady` (Promise)              |
-| `typeCast` pada `query()`     | Tidak                          | Ya                                       |
-| Cache regex placeholder       | Tidak                          | Ya (query meta cache, max 500 entry)     |
-| Cache scan named placeholder  | `.includes(':')` per call      | Cached bareng placeholder count          |
-| `parseExecute` normalisasi    | 2-3 pass (`every` × 2)         | Single-pass classify + build             |
-| `scheduleTick` coalescing     | Fire per query                 | Coalesced per tick                       |
-| Convar refresh                | `setInterval(1000)` polling    | `AddConvarChangeListener` event-driven   |
-| Logger fast-path              | Fungsi selalu dipanggil        | Gate inline, skip di rawQuery hot path   |
-| Scalar value extraction       | `Object.values(row)[0]`        | `for...in` (zero alloc)                  |
-| Log trim strategy             | `splice(0,1)` per insert O(n)  | `slice()` per N inserts amortized        |
-| Koneksi keep-alive            | Tidak dikonfigurasi            | `enableKeepAlive: true`, delay **0 ms**  |
+| Aspek                         | OxMySQL                        | ReoxMySQL                                                 |
+| ----------------------------- | ------------------------------ | --------------------------------------------------------- |
+| Nama resource                 | `oxmysql`                      | `reoxmysql`                                               |
+| Prefix konvar                 | `mysql_*`                      | `re_mysql_*`                                              |
+| Kompatibilitas `mysql-async`  | Ya (`provide`)                 | **Tidak**                                                 |
+| Kompatibilitas `ghmattimysql` | Ya (`provide`)                 | **Tidak**                                                 |
+| Batch execute                 | Unbounded `Promise.all`        | Worker-pool dengan cap 60% pool                           |
+| Busy-wait pool                | `while (!pool) await sleep(0)` | `await poolReady` (Promise)                               |
+| `typeCast` pada `query()`     | Tidak                          | Ya                                                        |
+| Cache regex placeholder       | Tidak                          | Ya (query meta cache, max 500 entry)                      |
+| Cache scan named placeholder  | `.includes(':')` per call      | Cached bareng placeholder count                           |
+| `parseExecute` normalisasi    | 2-3 pass (`every` × 2)         | Single-pass classify + build                              |
+| `scheduleTick` coalescing     | Fire per query                 | Coalesced per tick                                        |
+| Convar refresh                | `setInterval(1000)` polling    | `AddConvarChangeListener` event-driven                    |
+| Logger fast-path              | Fungsi selalu dipanggil        | Gate inline, skip di rawQuery hot path                    |
+| Scalar value extraction       | `Object.values(row)[0]`        | `for...in` (zero alloc)                                   |
+| Log trim strategy             | `splice(0,1)` per insert O(n)  | `slice()` per N inserts amortized                         |
+| Koneksi keep-alive            | Tidak dikonfigurasi            | `enableKeepAlive: true`, delay **0 ms**                   |
 | Pool idle tuning              | Tidak ada                      | `re_mysql_max_idle_connections` + `re_mysql_idle_timeout` |
-| Dokumentasi konfigurasi       | Tidak ada                      | `RECOMENDED_CONF.md`                     |
+| Dokumentasi konfigurasi       | Tidak ada                      | `RECOMENDED_CONF.id.md` / `RECOMENDED_CONF.en.md`         |
 
 ---
 
@@ -310,7 +310,9 @@ export function scheduleTick() {
   if (_scheduled) return;
   _scheduled = true;
   ScheduleResourceTick(resourceName);
-  setImmediate(() => { _scheduled = false; });
+  setImmediate(() => {
+    _scheduled = false;
+  });
 }
 ```
 
@@ -327,7 +329,7 @@ share satu native call. Pada burst 5.000 QPS yang menghantam ~30 tick, itu
 
 **Masalah sebelumnya:**
 `rawQuery` tanpa syarat memanggil `logQuery(...)` setelah setiap query. Gate
-slow-query ada *di dalam* `logQuery`. Artinya overhead panggilan fungsi +
+slow-query ada _di dalam_ `logQuery`. Artinya overhead panggilan fungsi +
 argument marshal (`invokingResource`, `query`, `elapsed`, `parameters`) selalu
 dibayar bahkan ketika tidak ada yang akan di-log.
 
@@ -413,10 +415,15 @@ let allObjects = true;
 for (let i = 0; i < len; i++) {
   const item = parameters[i];
   if (!Array.isArray(item)) allArrays = false;
-  if (typeof item !== 'object' || item === null) { allObjects = false; break; }
+  if (typeof item !== 'object' || item === null) {
+    allObjects = false;
+    break;
+  }
 }
 if (allArrays) return parameters;
-if (allObjects) { /* single build pass pakai for..in, bukan Object.entries */ }
+if (allObjects) {
+  /* single build pass pakai for..in, bukan Object.entries */
+}
 ```
 
 Satu scan untuk klasifikasi, satu allocation pass untuk build. `for..in` pada

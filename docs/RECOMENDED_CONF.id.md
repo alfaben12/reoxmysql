@@ -161,7 +161,8 @@ set re_mysql_versioncheck "false" # Boleh dimatikan biar hemat koneksi keluar
 
 2. **`namedPlaceholders=false` ± fast-path.** Query parser skip scan `:` / `@`
    dan langsung pakai cache placeholder count. Di 5,000 QPS ini = ~5,000 regex
-   + 10,000 `.includes()` call per detik yang hilang dari hot loop.
+
+   - 10,000 `.includes()` call per detik yang hilang dari hot loop.
 
 3. **Promise pool ready.** Saat server baru mulai, resource lain yang manggil
    query sebelum pool siap tidak bikin busy-wait loop — mereka langsung `await`
@@ -359,21 +360,21 @@ ALTER TABLE apartments     ADD INDEX idx_owner (owner);
 
 ## Referensi Convar
 
-| Convar                                 | Tipe      | Default | Keterangan                                                              |
-| -------------------------------------- | --------- | ------- | ----------------------------------------------------------------------- |
-| `re_mysql_connection_string`           | string    | `""`    | URI koneksi MySQL atau format `key=value`. **Wajib diisi.**             |
-| `re_mysql_connection_limit`            | int       | `25`    | Maksimal koneksi simultan ke MySQL                                      |
-| `re_mysql_max_idle_connections`        | int       | `= limit` | Maksimal koneksi yang dipertahankan idle di pool                      |
-| `re_mysql_idle_timeout`                | int       | `60000` | Idle timeout (ms) — koneksi idle lebih lama dari ini ditutup            |
-| `re_mysql_queue_limit`                 | int       | `0`     | Maksimal antrean koneksi (0 = tanpa batas)                              |
-| `re_mysql_slow_query_warning`          | int       | `200`   | Ambang batas (ms) untuk warning slow query                              |
-| `re_mysql_resultset_warning`           | int       | `1000`  | Ambang batas jumlah baris untuk warning result set besar                |
-| `re_mysql_transaction_isolation_level` | int       | `2`     | 1=REPEATABLE READ, 2=READ COMMITTED, 3=READ UNCOMMITTED, 4=SERIALIZABLE |
-| `re_mysql_debug`                       | bool/json | `false` | Log semua query: `true` (semua), atau `["resource"]` (spesifik)         |
-| `re_mysql_ui`                          | bool      | `false` | Nyalakan UI monitor in-game `/mysql`                                    |
-| `re_mysql_log_size`                    | int       | `100`   | Kapasitas log query per-resource di UI                                  |
-| `re_mysql_logger_service`              | string    | `""`    | Path ke custom logger module                                            |
-| `re_mysql_versioncheck`                | bool      | `true`  | Cek versi terbaru dari GitHub saat startup                              |
+| Convar                                 | Tipe      | Default   | Keterangan                                                              |
+| -------------------------------------- | --------- | --------- | ----------------------------------------------------------------------- |
+| `re_mysql_connection_string`           | string    | `""`      | URI koneksi MySQL atau format `key=value`. **Wajib diisi.**             |
+| `re_mysql_connection_limit`            | int       | `25`      | Maksimal koneksi simultan ke MySQL                                      |
+| `re_mysql_max_idle_connections`        | int       | `= limit` | Maksimal koneksi yang dipertahankan idle di pool                        |
+| `re_mysql_idle_timeout`                | int       | `60000`   | Idle timeout (ms) — koneksi idle lebih lama dari ini ditutup            |
+| `re_mysql_queue_limit`                 | int       | `0`       | Maksimal antrean koneksi (0 = tanpa batas)                              |
+| `re_mysql_slow_query_warning`          | int       | `200`     | Ambang batas (ms) untuk warning slow query                              |
+| `re_mysql_resultset_warning`           | int       | `1000`    | Ambang batas jumlah baris untuk warning result set besar                |
+| `re_mysql_transaction_isolation_level` | int       | `2`       | 1=REPEATABLE READ, 2=READ COMMITTED, 3=READ UNCOMMITTED, 4=SERIALIZABLE |
+| `re_mysql_debug`                       | bool/json | `false`   | Log semua query: `true` (semua), atau `["resource"]` (spesifik)         |
+| `re_mysql_ui`                          | bool      | `false`   | Nyalakan UI monitor in-game `/mysql`                                    |
+| `re_mysql_log_size`                    | int       | `100`     | Kapasitas log query per-resource di UI                                  |
+| `re_mysql_logger_service`              | string    | `""`      | Path ke custom logger module                                            |
+| `re_mysql_versioncheck`                | bool      | `true`    | Cek versi terbaru dari GitHub saat startup                              |
 
 ---
 

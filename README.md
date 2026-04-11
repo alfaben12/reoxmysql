@@ -2,15 +2,17 @@
 
 A FiveM resource to communicate with a MySQL database using [node-mysql2](https://github.com/sidorares/node-mysql2).
 
-This repository is a custom project based on [oxmysql](https://github.com/communityox/oxmysql), updated for this community's needs. It keeps the general purpose of oxmysql, but some compatibility layers and behavior are intentionally different in `reoxmysql`.
+This repository is a custom project based on [oxmysql](https://github.com/communityox/oxmysql) v2.13.1, updated for this community's needs. It keeps the general purpose of oxmysql, but some compatibility layers and behavior are intentionally different in `reoxmysql`.
 
 ## Links
 
-- [CHANGES.md](CHANGES.md)
-  - Changelog and detailed differences from oxmysql.
-- [RECOMENDED_CONF.en.md](RECOMENDED_CONF.en.md)
+- [docs/CHANGES.en.md](docs/CHANGES.en.md)
+  - Changelog and detailed differences from oxmysql in English.
+- [docs/CHANGES.id.md](docs/CHANGES.id.md)
+  - Changelog and detailed differences from oxmysql in Indonesian.
+- [docs/RECOMENDED_CONF.en.md](docs/RECOMENDED_CONF.en.md)
   - Recommended configuration in English.
-- [RECOMENDED_CONF.id.md](RECOMENDED_CONF.id.md)
+- [docs/RECOMENDED_CONF.id.md](docs/RECOMENDED_CONF.id.md)
   - Recommended configuration in Indonesian.
 
 ## Features
@@ -26,7 +28,7 @@ This repository is a custom project based on [oxmysql](https://github.com/commun
 - This resource name is `reoxmysql`, not `oxmysql`.
 - All convars use the `re_mysql_*` prefix.
 - Legacy compatibility for `mysql-async` and `ghmattimysql` is not included.
-- If a feature or behavior is specific to this fork, check `CHANGES.md` first.
+- If a feature or behavior is specific to this fork, check `docs/CHANGES.en.md` or `docs/CHANGES.id.md` first.
 
 ## Lua Language Server
 

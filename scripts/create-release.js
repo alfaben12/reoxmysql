@@ -10,12 +10,11 @@ const releaseEntries = [
   'lib/MySQL.lua',
   'logger',
   'web/build',
+  'docs',
   'fxmanifest.lua',
   'LICENSE',
   'README.md',
   'ui.lua',
-  'RECOMENDED_CONF.en.md',
-  'RECOMENDED_CONF.id.md',
 ];
 
 for (const entry of releaseEntries) {
