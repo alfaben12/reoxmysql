@@ -1,7 +1,6 @@
 import type { CFXCallback, CFXParameters, TransactionQuery } from './types';
-import { rawQuery, rawExecute, rawTransaction, pool } from './database';
+import { rawQuery, rawExecute, rawTransaction, pool, poolReady } from './database';
 import { startTransaction } from 'database/startTransaction';
-import { sleep } from 'utils/sleep';
 import ghmatti from './compatibility/ghmattimysql';
 import mysqlAsync from './compatibility/mysql-async';
 import('./update');
@@ -13,7 +12,7 @@ MySQL.isReady = () => {
 };
 
 MySQL.awaitConnection = async () => {
-  while (!pool) await sleep(0);
+  if (!pool) await poolReady;
 
   return true;
 };

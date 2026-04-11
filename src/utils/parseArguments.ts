@@ -1,6 +1,11 @@
 import type { CFXParameters } from '../types';
 import { convertNamedPlaceholders } from '../config';
 
+// Cache placeholder counts per query string to avoid re-running the regex on
+// every call with the same (repeated) query.  Clear-on-full keeps it bounded.
+const _placeholderCache = new Map<string, number>();
+const PLACEHOLDER_CACHE_MAX = 200;
+
 export const parseArguments = (query: string, parameters?: CFXParameters): [string, CFXParameters] => {
   if (typeof query !== 'string') throw new Error(`Expected query to be a string but received ${typeof query} instead.`);
 
@@ -11,7 +16,12 @@ export const parseArguments = (query: string, parameters?: CFXParameters): [stri
 
   if (!parameters || typeof parameters === 'function') parameters = [];
 
-  const placeholders = query.match(/\?(?!\?)/g)?.length ?? 0;
+  let placeholders = _placeholderCache.get(query);
+  if (placeholders === undefined) {
+    placeholders = query.match(/\?(?!\?)/g)?.length ?? 0;
+    if (_placeholderCache.size >= PLACEHOLDER_CACHE_MAX) _placeholderCache.clear();
+    _placeholderCache.set(query, placeholders);
+  }
 
   if (parameters && !Array.isArray(parameters)) {
     let arr: unknown[] = [];

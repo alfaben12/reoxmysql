@@ -1,9 +1,8 @@
-import type { Connection, PoolConnection, TypeCast } from 'mysql2/promise';
+import type { Connection, PoolConnection } from 'mysql2/promise';
 import { scheduleTick } from '../utils/scheduleTick';
-import { sleep } from '../utils/sleep';
-import { pool } from './pool';
+import { pool, poolReady } from './pool';
 import type { CFXParameters } from 'types';
-import { typeCastExecute } from 'utils/typeCast';
+import { typeCast, typeCastExecute } from 'utils/typeCast';
 
 (Symbol as any).dispose ??= Symbol('Symbol.dispose');
 
@@ -28,7 +27,7 @@ export class MySql {
   async query(query: string, values: CFXParameters = []) {
     scheduleTick();
 
-    const [result] = await this.connection.query(query, values);
+    const [result] = await this.connection.query({ sql: query, values, typeCast });
     return result;
   }
 
@@ -58,6 +57,12 @@ export class MySql {
     return this.connection.commit();
   }
 
+  // Explicit release without transaction semantics — used by parallel batch execute
+  release() {
+    delete activeConnections[this.id];
+    this.connection.release();
+  }
+
   [Symbol.dispose]() {
     if (this.transaction) this.commit();
 
@@ -67,7 +72,7 @@ export class MySql {
 }
 
 export async function getConnection(connectionId?: number) {
-  while (!pool) await sleep(0);
+  if (!pool) await poolReady;
 
   return connectionId
     ? activeConnections[connectionId]

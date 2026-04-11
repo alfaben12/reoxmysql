@@ -27,7 +27,7 @@ export const startTransaction = async (
 
   if (!conn) return;
 
-  setTimeout(() => (closed = true), 30000);
+  const timer = setTimeout(() => (closed = true), 30000);
 
   try {
     await conn.beginTransaction();
@@ -39,12 +39,13 @@ export const startTransaction = async (
     if (closed) throw new Error(`Transaction has timed out after 30 seconds.`);
 
     response = commit === false ? false : true;
-    
+
     if (!response) conn.rollback();
   } catch (err: any) {
     conn.rollback();
     logError(invokingResource, cb, isPromise, err);
   } finally {
+    clearTimeout(timer);
     closed = true;
   }
 

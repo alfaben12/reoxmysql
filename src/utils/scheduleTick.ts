@@ -1,5 +1,5 @@
 const resourceName = GetCurrentResourceName();
 
-export async function scheduleTick() {
+export function scheduleTick() {
   ScheduleResourceTick(resourceName);
 }

@@ -9,6 +9,7 @@ import { RowDataPacket } from 'mysql2';
 import { performance } from 'perf_hooks';
 import validateResultSet from 'utils/validateResultSet';
 import { runProfiler } from 'profiler';
+import { mysql_debug } from 'config';
 
 export const rawQuery = async (
   type: QueryType,
@@ -31,7 +32,7 @@ export const rawQuery = async (
   if (!connection) return;
 
   try {
-    const hasProfiler = await runProfiler(connection, invokingResource);
+    const hasProfiler = mysql_debug && await runProfiler(connection, invokingResource);
     const startTime = !hasProfiler && performance.now();
     const result = await connection.query(query, parameters);
 

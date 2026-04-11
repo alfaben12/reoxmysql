@@ -74,6 +74,10 @@ interface QueryData {
 type QueryLog = Record<string, QueryData[]>;
 
 const logStorage: QueryLog = {};
+// Trim threshold: allow array to grow to 2× capacity before slicing back to 1×.
+// This amortises the O(n) trim cost over mysql_log_size inserts instead of paying
+// it on every single insert (which the old splice(0,1) approach did).
+const LOG_TRIM_FACTOR = 2;
 
 export const logQuery = (
   invokingResource: string,
@@ -95,7 +99,10 @@ export const logQuery = (
   if (!mysql_ui) return;
 
   if (!logStorage[invokingResource]) logStorage[invokingResource] = [];
-  else if (logStorage[invokingResource].length > mysql_log_size) logStorage[invokingResource].splice(0, 1);
+  else if (logStorage[invokingResource].length >= mysql_log_size * LOG_TRIM_FACTOR) {
+    // One O(n) slice every mysql_log_size inserts instead of O(n) splice on every insert.
+    logStorage[invokingResource] = logStorage[invokingResource].slice(mysql_log_size);
+  }
 
   logStorage[invokingResource].push({
     query,

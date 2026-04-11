@@ -3,7 +3,13 @@
     "allow": [
       "Bash(robocopy \"E:\\\\esx-legacy\\\\txData\\\\ESXLegacy_381884.base\\\\resources\\\\[standalone]\\\\oxmysql\" \"E:\\\\esx-legacy\\\\txData\\\\ESXLegacy_381884.base\\\\resources\\\\[standalone]\\\\reoxmysql\" /E /XD node_modules /NFL /NDL /NJH /NJS /nc /ns /np)",
       "Bash(echo \"Exit: $?\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Read(//e/esx-legacy/txData/ESXLegacy_381884.base/resources/**)",
+      "Bash(node build.js)",
+      "Bash(bun run:*)",
+      "Bash(rtk grep:*)",
+      "Bash(rtk bun:*)",
+      "Bash(node -e ':*)"
     ]
   }
 }

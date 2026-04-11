@@ -14,7 +14,9 @@ export const parseResponse = (type: QueryType, result: QueryResponse): any => {
 
     case 'scalar':
       const row = (result as RowDataPacket[])?.[0];
-      return (row && Object.values(row)[0]) ?? null;
+      if (!row) return null;
+      for (const key in row) return row[key]; // first value without allocating an array
+      return null;
 
     default:
       return result ?? null;
