@@ -1,74 +1,65 @@
 # ReoxMySQL
 
-A FiveM resource to communicate with a MySQL database using node-mysql2:
-https://github.com/sidorares/node-mysql2
+`reoxmysql` is a FiveM resource for MySQL access built on top of [`node-mysql2`](https://github.com/sidorares/node-mysql2).
 
-This repository is a custom project based on oxmysql v2.13.1:
-https://github.com/communityox/oxmysql
+This project is a custom fork based on [`oxmysql` v2.13.1](https://github.com/communityox/oxmysql). It keeps the same general purpose, but some compatibility layers and runtime behavior are intentionally different.
 
-It keeps the general purpose of oxmysql, but some compatibility layers and behavior are intentionally different in `reoxmysql`.
+## Overview
 
-## Purpose
+This resource is designed so **multiple MySQL resources** can run at the same time:
 
-This resource is designed to allow **multiple MySQL resources** to run simultaneously:
+- connected to the **same database**
+- or connected to **different databases**
+- without conflicting with other MySQL resources
 
-- Connect to the **same database**
-- Or connect to **different databases**
-- Without conflicts with other MySQL resources
+## Documentation
 
-## Links
+### Main docs
 
-- docs/CHANGES.en.md  
-  Changelog and detailed differences from oxmysql (English)
+- [`docs/CHANGES.en.md`](docs/CHANGES.en.md) - Changelog and detailed differences from `oxmysql` (English)
+- [`docs/CHANGES.id.md`](docs/CHANGES.id.md) - Changelog and detailed differences from `oxmysql` (Indonesian)
+- [`docs/RECOMENDED_CONF.en.md`](docs/RECOMENDED_CONF.en.md) - Recommended configuration (English)
+- [`docs/RECOMENDED_CONF.id.md`](docs/RECOMENDED_CONF.id.md) - Recommended configuration (Indonesian)
 
-- docs/CHANGES.id.md  
-  Changelog and detailed differences from oxmysql (Indonesian)
+### Additional docs
 
-- docs/RECOMENDED_CONF.en.md  
-  Recommended configuration (English)
-
-- docs/RECOMENDED_CONF.id.md  
-  Recommended configuration (Indonesian)
+- [`lib/README.md`](lib/README.md) - Additional library notes
 
 ## Features
 
-- Promises / async query handling (non-blocking & awaitable)
+- Promise-based and async query handling
 - Improved performance and stability
-- Support for named and unnamed placeholders (better security & performance)
-- Support for URI connection strings and semicolon format
+- Support for named and unnamed placeholders
+- Support for URI connection strings and semicolon-style connection strings
 - Improved parameter validation and error handling
 
 ## Important Notes
 
-- Resource name is **`reoxmysql`**, not `oxmysql`
-- All convars use the prefix:
+- Resource name must be **`reoxmysql`**, not `oxmysql`
+- All convars use the `re_mysql_` prefix
+- There is no compatibility layer for `mysql-async`
+- There is no compatibility layer for `ghmattimysql`
+- For fork-specific behavior, see [`docs/CHANGES.en.md`](docs/CHANGES.en.md) or [`docs/CHANGES.id.md`](docs/CHANGES.id.md)
 
-  re*mysql*\*
+## Installation
 
-- No compatibility for:
+1. Download the resource from the release package.
+2. Place it inside your `resources` folder.
+3. Add this line to `server.cfg`:
 
-  - mysql-async
-  - ghmattimysql
+```cfg
+ensure reoxmysql
+```
 
-- For fork-specific behavior, check:
-  - docs/CHANGES.en.md
-  - docs/CHANGES.id.md
+4. Add a minimal connection string, for example:
 
-## Installation (Plug & Play)
+```cfg
+set re_mysql_connection_string "mysql://user:password@localhost/database"
+```
 
-1. Download from the **release** folder
-2. Place it into your `resources` folder
-3. Add this to your `server.cfg`:
+After that, the resource is ready to use.
 
-   ensure reoxmysql
+## Development Tools
 
-4. Add minimal configuration (example):
-
-   set re_mysql_connection_string "mysql://user:password@localhost/database"
-
-Done — the resource is ready to use.
-
-## Lua Language Server
-
-- Install [Lua Language Server](https://marketplace.visualstudio.com/items?itemName=sumneko.lua) to ease development with annotations, type checking, diagnostics, and more.
-- See [ox_types](https://github.com/communityox/ox_types) for Lua type definitions that may still be useful for development.
+- Install [Lua Language Server](https://marketplace.visualstudio.com/items?itemName=sumneko.lua) for annotations, diagnostics, and type checking.
+- See [ox_types](https://github.com/communityox/ox_types) for Lua type definitions that may still be useful during development.
