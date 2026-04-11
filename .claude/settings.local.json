@@ -9,7 +9,11 @@
       "Bash(bun run:*)",
       "Bash(rtk grep:*)",
       "Bash(rtk bun:*)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(rtk git:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(node:*)"
     ]
   }
 }

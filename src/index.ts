@@ -1,8 +1,6 @@
 import type { CFXCallback, CFXParameters, TransactionQuery } from './types';
 import { rawQuery, rawExecute, rawTransaction, pool, poolReady } from './database';
 import { startTransaction } from 'database/startTransaction';
-import ghmatti from './compatibility/ghmattimysql';
-import mysqlAsync from './compatibility/mysql-async';
 import('./update');
 
 const MySQL = {} as Record<string, Function>;
@@ -105,19 +103,6 @@ MySQL.rawExecute = (
   rawExecute(invokingResource, query, parameters, cb, isPromise);
 };
 
-// provide the store export for compatibility (ghmatti/mysql-async); simply returns the query as-is
-MySQL.store = (query: string, cb: Function) => {
-  cb(query);
-};
-
-// deprecated export names
-MySQL.execute = MySQL.query;
-MySQL.fetch = MySQL.query;
-
-function provide(resourceName: string, method: string, cb: Function) {
-  on(`__cfx_export_${resourceName}_${method}`, (setCb: Function) => setCb(cb));
-}
-
 for (const key in MySQL) {
   const exp = MySQL[key];
 
@@ -137,21 +122,5 @@ for (const key in MySQL) {
   };
 
   global.exports(key, exp);
-  // async_retval
   global.exports(`${key}_async`, async_exp);
-  // deprecated aliases for async_retval
-  global.exports(`${key}Sync`, async_exp);
-
-  let alias = (ghmatti as any)[key];
-
-  if (alias) {
-    provide('ghmattimysql', alias, exp);
-    provide('ghmattimysql', `${alias}Sync`, async_exp);
-  }
-
-  alias = (mysqlAsync as any)[key];
-
-  if (alias) {
-    provide('mysql-async', alias, exp);
-  }
 }
