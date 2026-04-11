@@ -26,6 +26,11 @@
 | Log trim strategy            | `splice(0,1)` per insert O(n)  | `slice()` every N inserts, amortized                      |
 | Connection keep-alive        | Not configured                 | `enableKeepAlive: true`, delay **0 ms**                   |
 | Pool idle tuning             | None                           | `re_mysql_max_idle_connections` + `re_mysql_idle_timeout` |
+| Idle connection close        | TCP destroy (abrupt)           | `re_mysql_graceful_end` — COM_QUIT before close           |
+| Prepared statement cache     | 16 000 per connection          | `re_mysql_max_prepared_statements` (default 500)          |
+| Network compression          | Not configurable               | `re_mysql_compress` convar (default off)                  |
+| mysql2 version               | Patched 3.11.3                 | Patched 3.22.0                                            |
+| named-placeholders version   | Patched 1.1.3                  | Patched 1.1.6 (LRU cache via `lru.min`)                   |
 | Config documentation         | None                           | `RECOMENDED_CONF.id.md` / `RECOMENDED_CONF.en.md`         |
 
 ---
@@ -82,6 +87,80 @@ local result = exports.reoxmysql:query_async('SELECT * FROM players WHERE identi
 | `MySQL.execute` | Deprecated alias of `MySQL.query`      |
 | `MySQL.fetch`   | Deprecated alias of `MySQL.query`      |
 | `${key}Sync`    | Deprecated alias - use `${key}_async`  |
+
+---
+
+## Library Upgrade
+
+### mysql2: 3.11.3 → 3.22.0
+
+Patch files renamed from `patches/mysql2+3.11.3.patch` to `patches/mysql2+3.22.0.patch`.
+
+Changes applied to mysql2@3.22.0 (structure changed from 3.x — `lib/connection.js` split into `lib/base/connection.js` + `lib/packets/encode_parameter.js`):
+
+| File | Change | Reason |
+|------|--------|--------|
+| `lib/parsers/binary_parser.js` | `readLengthCodedBuffer()` → `[...readLengthCodedBuffer()]` | Lua cannot receive a `Buffer`; spread to plain array |
+| `lib/parsers/binary_parser.js` | Add `charset: field.characterSet` to `wrap()` | Expose charset so `typeCast` can detect BINARY columns |
+| `lib/parsers/text_parser.js` | Add `charset: field.characterSet` to `wrap()` | Same as above for text (query) protocol |
+| `lib/packets/encode_parameter.js` | `undefined` → `''` + `Types.NULL` instead of throw | Prevents crash on unexpected undefined parameters |
+| `typings/.../typeCast.d.ts` | Add `charset: number` to `Field` | TypeScript type for the new `field.charset` usage |
+
+### named-placeholders: 1.1.3 → 1.1.6
+
+Patch files renamed from `patches/named-placeholders+1.1.3.patch` to `patches/named-placeholders+1.1.6.patch`.
+
+named-placeholders@1.1.6 uses `lru.min` for its internal parse-tree cache (same LRU library as mysql2). The named-placeholders factory now accepts `{ cache: N }` to size it:
+
+```typescript
+// config.ts — aligned to 500 entries, matching parseArguments meta cache
+require('named-placeholders')({ cache: 500 })
+```
+
+Custom patch still applied to 1.1.6:
+- `RE_PARAM` regex extended to match `@param` in addition to `:param`, with negative lookbehind to skip matches inside quoted strings
+- Key prefix stripping (`@key` / `:key` → `key`) before token lookup
+- `undefined` param values fall back to `null` instead of being pushed as-is
+
+---
+
+## Bug Fixes
+
+### `rawTransaction`: `transactionError` never returned its string
+
+**File:** `src/database/rawTransaction.ts`
+
+```typescript
+// Before — template string was built but discarded (no return)
+const transactionError = (...) => {
+  `${queries.map(...).join('\n')}\n${JSON.stringify(parameters)}`;
+};
+
+// After
+const transactionError = (...) => {
+  return `${queries.map(...).join('\n')}\n${JSON.stringify(parameters)}`;
+};
+```
+
+Effect: `transactionError(...)` always returned `undefined`. When `err.sql` was falsy, the message in `reoxmysql:transaction-error` event and the logger contained no query/parameter context.
+
+---
+
+### `typeCast`: NULL BLOB returned `[null]` instead of `null`
+
+**File:** `src/utils/typeCast.ts`
+
+mysql2@3.22.0 `text_parser.js` calls `typeCast` for **all** fields including NULL ones. In the text protocol (`query()`), `field.buffer()` returns `null` for a NULL column:
+
+```typescript
+// Before — [null] is a one-element array containing null
+if (value === null) return [value];
+
+// After — return null directly (SQL NULL → Lua nil)
+if (value === null) return null;
+```
+
+A NULL BLOB column was previously delivered to Lua as `{ [1] = nil }` (single-element table with nil). Now it correctly arrives as `nil`.
 
 ---
 
@@ -156,25 +235,27 @@ No wasted CPU while waiting for the first database connection.
 
 ---
 
-### Connection Keep-Alive and Pool Idle Tuning
+### Connection Keep-Alive, Pool Idle Tuning, and New mysql2@3.22.0 Options
 
-**File:** `src/database/pool.ts`
+**Files:** `src/database/pool.ts`, `src/config.ts`
 
-The pool now supports:
+The pool supports all of the following:
 
-- `enableKeepAlive: true`
-- `keepAliveInitialDelay: 0`
-- `re_mysql_max_idle_connections`
-- `re_mysql_idle_timeout`
-
-This gives better control over idle sockets, faster dead-socket detection, and lower reconnect overhead during burst traffic.
+- `enableKeepAlive: true` — prevent socket drops after MySQL `wait_timeout`
+- `keepAliveInitialDelay: 0` — detect dead sockets immediately when a connection goes idle
+- `re_mysql_max_idle_connections` — cap idle connections during quiet hours
+- `re_mysql_idle_timeout` — recycle connections past this age (ms)
+- `re_mysql_graceful_end` (new) — send COM_QUIT before closing idle connections (default on)
+- `re_mysql_max_prepared_statements` (new) — per-connection prepared statement LRU size (default 500)
+- `re_mysql_compress` (new) — MySQL protocol network compression (default off)
 
 ```typescript
+// pool.ts
 const maxIdle = GetConvarInt('re_mysql_max_idle_connections', connectionLimit);
 const idleTimeout = GetConvarInt('re_mysql_idle_timeout', 60000);
 
 createPool({
-  ...config,
+  ...config,   // gracefulEnd, maxPreparedStatements, compress come from getConnectionOptions()
   connectionLimit,
   waitForConnections: true,
   queueLimit,
@@ -183,7 +264,22 @@ createPool({
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
 });
+
+// config.ts
+return {
+  ...options,
+  gracefulEnd: GetConvarInt('re_mysql_graceful_end', 1) !== 0,
+  maxPreparedStatements: GetConvarInt('re_mysql_max_prepared_statements', 500),
+  compress: GetConvarInt('re_mysql_compress', 0) !== 0,
+  ...
+};
 ```
+
+**`gracefulEnd`:** When an idle connection is recycled, `true` sends COM_QUIT before closing the socket — MySQL cleans up the thread immediately instead of waiting for TCP timeout. Prior behavior (`destroy()`) incremented `Aborted_clients` and left "sleep" rows in `SHOW PROCESSLIST`.
+
+**`maxPreparedStatements`:** mysql2@3.22.0 creates one `lru.min` LRU per connection with `max: 16000` by default. A typical FiveM server has fewer than 200 unique `execute()` queries, so 500 is more than sufficient and lowers memory overhead per connection.
+
+**`compress`:** MySQL protocol compression. Only useful when the DB server is on a different machine. On localhost or LAN the CPU cost outweighs the bandwidth savings.
 
 ---
 

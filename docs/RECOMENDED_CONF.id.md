@@ -76,6 +76,13 @@ set re_mysql_slow_query_warning "100"
 set re_mysql_resultset_warning  "500"
 set re_mysql_transaction_isolation_level "2"
 
+# ─── Behavior koneksi ────────────────────────────────────────────────────────
+# gracefulEnd: COM_QUIT saat recycle koneksi idle (biar SHOW PROCESSLIST bersih)
+set re_mysql_graceful_end "1"
+
+# Cache prepared statement per koneksi (default mysql2 = 16000, 500 sudah cukup buat FiveM)
+set re_mysql_max_prepared_statements "500"
+
 # ─── UI / Logging ────────────────────────────────────────────────────────────
 set re_mysql_ui       "false"
 set re_mysql_log_size "200"
@@ -144,6 +151,18 @@ set re_mysql_resultset_warning "300"
 
 # READ COMMITTED paling masuk akal buat game server
 set re_mysql_transaction_isolation_level "2"
+
+# ─── Behavior koneksi ────────────────────────────────────────────────────────
+# gracefulEnd: COM_QUIT saat recycle idle. SHOW PROCESSLIST bersih, Aborted_clients = 0.
+set re_mysql_graceful_end "1"
+
+# Cache prepared statement per koneksi. Default mysql2 = 16000, tidak masuk akal buat FiveM.
+# Server tipikal punya < 200 query execute() unik. 500 lebih dari cukup.
+set re_mysql_max_prepared_statements "500"
+
+# compress: hanya berguna kalau DB di mesin BERBEDA.
+# Kalau localhost (mesin sama) biarkan 0 — overhead CPU > penghematan bandwidth.
+set re_mysql_compress "0"
 
 # ─── Production settings ─────────────────────────────────────────────────────
 set re_mysql_ui       "false"   # Matikan di production biar lebih ringan
@@ -366,6 +385,9 @@ ALTER TABLE apartments     ADD INDEX idx_owner (owner);
 | `re_mysql_connection_limit`            | int       | `25`      | Maksimal koneksi simultan ke MySQL                                      |
 | `re_mysql_max_idle_connections`        | int       | `= limit` | Maksimal koneksi yang dipertahankan idle di pool                        |
 | `re_mysql_idle_timeout`                | int       | `60000`   | Idle timeout (ms) — koneksi idle lebih lama dari ini ditutup            |
+| `re_mysql_graceful_end`                | int       | `1`       | `1` = kirim COM_QUIT sebelum tutup koneksi idle; `0` = destroy()        |
+| `re_mysql_max_prepared_statements`     | int       | `500`     | Ukuran LRU cache prepared statement per koneksi                         |
+| `re_mysql_compress`                    | int       | `0`       | `1` = aktifkan kompresi protokol MySQL (hanya untuk DB remote)          |
 | `re_mysql_queue_limit`                 | int       | `0`       | Maksimal antrean koneksi (0 = tanpa batas)                              |
 | `re_mysql_slow_query_warning`          | int       | `200`     | Ambang batas (ms) untuk warning slow query                              |
 | `re_mysql_resultset_warning`           | int       | `1000`    | Ambang batas jumlah baris untuk warning result set besar                |
@@ -397,3 +419,4 @@ set re_mysql_connection_string "host=127.0.0.1;user=user;password=password;datab
 | `connectTimeout`     | `connectTimeout=10000`            | Timeout koneksi dalam ms (default 60000)               |
 | `ssl`                | `ssl={"rejectUnauthorized":true}` | Aktifkan TLS                                           |
 | `multipleStatements` | `multipleStatements=false`        | Jangan dinyalakan di production (risiko SQL injection) |
+| `compress`           | `compress=true`                   | Kompresi jaringan — hanya untuk DB remote, bukan localhost |

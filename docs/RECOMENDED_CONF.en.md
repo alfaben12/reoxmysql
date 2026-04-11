@@ -76,6 +76,13 @@ set re_mysql_slow_query_warning "100"
 set re_mysql_resultset_warning  "500"
 set re_mysql_transaction_isolation_level "2"
 
+# ─── Connection behavior ─────────────────────────────────────────────────────
+# gracefulEnd: send COM_QUIT before closing idle connections (keeps MySQL processlist clean)
+set re_mysql_graceful_end "1"
+
+# Per-connection prepared statement LRU cache (mysql2 default = 16000, 500 is enough for FiveM)
+set re_mysql_max_prepared_statements "500"
+
 # ─── UI / Logging ────────────────────────────────────────────────────────────
 set re_mysql_ui       "false"
 set re_mysql_log_size "200"
@@ -144,6 +151,18 @@ set re_mysql_resultset_warning "300"
 
 # READ COMMITTED is the most sensible option for game servers
 set re_mysql_transaction_isolation_level "2"
+
+# ─── Connection behavior ─────────────────────────────────────────────────────
+# gracefulEnd: COM_QUIT on idle recycle. Keeps SHOW PROCESSLIST clean and Aborted_clients at 0.
+set re_mysql_graceful_end "1"
+
+# Prepared statement cache per connection. Default 16000 is excessive for FiveM.
+# Typical server has < 200 unique execute() queries. 500 is more than enough.
+set re_mysql_max_prepared_statements "500"
+
+# compress: useful only if DB is on a DIFFERENT machine.
+# On localhost (same machine) leave this at 0 — CPU cost > bandwidth savings.
+set re_mysql_compress "0"
 
 # ─── Production settings ─────────────────────────────────────────────────────
 set re_mysql_ui       "false"   # Disable in production to keep it lighter
@@ -364,6 +383,9 @@ ALTER TABLE apartments     ADD INDEX idx_owner (owner);
 | `re_mysql_connection_limit`            | int       | `25`      | Maximum concurrent MySQL connections                                    |
 | `re_mysql_max_idle_connections`        | int       | `= limit` | Maximum idle connections kept alive in the pool                         |
 | `re_mysql_idle_timeout`                | int       | `60000`   | Idle timeout (ms) — idle connections longer than this get closed        |
+| `re_mysql_graceful_end`                | int       | `1`       | `1` = send COM_QUIT before closing idle connections; `0` = destroy()    |
+| `re_mysql_max_prepared_statements`     | int       | `500`     | Per-connection LRU cache size for prepared statements                   |
+| `re_mysql_compress`                    | int       | `0`       | `1` = enable MySQL protocol compression (remote DB only)                |
 | `re_mysql_queue_limit`                 | int       | `0`       | Maximum connection queue size (0 = unlimited)                           |
 | `re_mysql_slow_query_warning`          | int       | `200`     | Threshold in ms for slow query warnings                                 |
 | `re_mysql_resultset_warning`           | int       | `1000`    | Row threshold for large result set warnings                             |
@@ -395,3 +417,4 @@ set re_mysql_connection_string "host=127.0.0.1;user=user;password=password;datab
 | `connectTimeout`     | `connectTimeout=10000`            | Connection timeout in ms (default 60000)         |
 | `ssl`                | `ssl={"rejectUnauthorized":true}` | Enable TLS                                       |
 | `multipleStatements` | `multipleStatements=false`        | Do not enable in production (SQL injection risk) |
+| `compress`           | `compress=true`                   | Network compression — remote DB only, not localhost |

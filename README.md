@@ -33,9 +33,15 @@ This resource is designed so **multiple MySQL resources** can run at the same ti
 
 - Promise-based and async query handling
 - Improved performance and stability
-- Support for named and unnamed placeholders
+- Support for named (`@param` / `:param`) and unnamed (`?`) placeholders
 - Support for URI connection strings and semicolon-style connection strings
 - Improved parameter validation and error handling
+- `typeCast` applied consistently across both `query()` (text protocol) and `execute()` (binary protocol)
+- Batch execute worker-pool with concurrency cap (prevents pool starvation)
+- Prepared statement LRU cache tunable via `re_mysql_max_prepared_statements`
+- Graceful idle connection recycling via `re_mysql_graceful_end`
+- Optional network compression via `re_mysql_compress`
+- Built on **mysql2@3.22.0** and **named-placeholders@1.1.6** with custom patches
 
 ## Important Notes
 

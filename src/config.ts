@@ -85,7 +85,7 @@ export function getConnectionOptions(): ConnectionOptions {
           return connectionInfo;
         }, {});
 
-  convertNamedPlaceholders = options.namedPlaceholders === 'false' ? null : require('named-placeholders')();
+  convertNamedPlaceholders = options.namedPlaceholders === 'false' ? null : require('named-placeholders')({ cache: 500 });
 
   for (const key of ['dateStrings', 'flags', 'ssl']) {
     const value = options[key];
@@ -104,10 +104,19 @@ export function getConnectionOptions(): ConnectionOptions {
 
   return {
     connectTimeout: 60000,
-    trace: false,
     supportBigNumbers: true,
     jsonStrings: true,
     ...options,
+    // trace: in mysql2@3.22+ tracing uses diagnostics_channel (zero-cost when no subscribers).
+    // Keeping false is harmless legacy — it no longer captures per-query stack traces.
+    trace: false,
+    // Send COM_QUIT before closing idle connections so MySQL cleans up immediately
+    // instead of waiting for TCP timeout. Reduces Aborted_clients and sleep count.
+    gracefulEnd: GetConvarInt('re_mysql_graceful_end', 1) !== 0,
+    compress: GetConvarInt('re_mysql_compress', 0) !== 0,
+    // Per-connection LRU cache for prepared statements. Default 16 000 is excessive
+    // for FiveM (typical servers have <200 unique execute queries). Tunable via convar.
+    maxPreparedStatements: GetConvarInt('re_mysql_max_prepared_statements', 500),
     typeCast,
     namedPlaceholders: false, // we use our own named-placeholders patch, disable mysql2s
     flags: flags,

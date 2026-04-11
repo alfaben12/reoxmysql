@@ -46,7 +46,7 @@ export async function createConnectionPool() {
 
     console.log(`${dbVersion} ^2Database server connection established!^0`);
     console.log(
-      `^2Pool: ${connectionLimit} max, ${maxIdle} idle, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms^0`
+      `^2Pool: ${connectionLimit} max, ${maxIdle} idle, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${config.maxPreparedStatements ?? 500}, gracefulEnd: ${config.gracefulEnd ?? true}^0`
     );
 
     if (config.multipleStatements) {

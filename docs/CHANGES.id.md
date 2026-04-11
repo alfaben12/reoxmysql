@@ -26,6 +26,11 @@
 | Log trim strategy             | `splice(0,1)` per insert O(n)  | `slice()` per N inserts amortized                         |
 | Koneksi keep-alive            | Tidak dikonfigurasi            | `enableKeepAlive: true`, delay **0 ms**                   |
 | Pool idle tuning              | Tidak ada                      | `re_mysql_max_idle_connections` + `re_mysql_idle_timeout` |
+| Penutupan koneksi idle        | TCP destroy (putus paksa)      | `re_mysql_graceful_end` — COM_QUIT sebelum tutup          |
+| Cache prepared statement      | 16.000 per koneksi             | `re_mysql_max_prepared_statements` (default 500)          |
+| Kompresi jaringan             | Tidak bisa dikonfigurasi       | Convar `re_mysql_compress` (default mati)                 |
+| Versi mysql2                  | Patched 3.11.3                 | Patched 3.22.0                                            |
+| Versi named-placeholders      | Patched 1.1.3                  | Patched 1.1.6 (LRU cache via `lru.min`)                   |
 | Dokumentasi konfigurasi       | Tidak ada                      | `RECOMENDED_CONF.id.md` / `RECOMENDED_CONF.en.md`         |
 
 ---
@@ -82,6 +87,80 @@ local result = exports.reoxmysql:query_async('SELECT * FROM players WHERE identi
 | `MySQL.execute` | Alias usang dari `MySQL.query`          |
 | `MySQL.fetch`   | Alias usang dari `MySQL.query`          |
 | `${key}Sync`    | Alias usang — gunakan `${key}_async`    |
+
+---
+
+## Upgrade Library
+
+### mysql2: 3.11.3 → 3.22.0
+
+File patch diganti dari `patches/mysql2+3.11.3.patch` ke `patches/mysql2+3.22.0.patch`.
+
+Perubahan yang diterapkan ke mysql2@3.22.0 (struktur berubah dari 3.x — `lib/connection.js` dipecah menjadi `lib/base/connection.js` + `lib/packets/encode_parameter.js`):
+
+| File | Perubahan | Alasan |
+|------|-----------|--------|
+| `lib/parsers/binary_parser.js` | `readLengthCodedBuffer()` → `[...readLengthCodedBuffer()]` | Lua tidak bisa terima `Buffer`; spread ke plain array |
+| `lib/parsers/binary_parser.js` | Tambah `charset: field.characterSet` di `wrap()` | Ekspos charset biar `typeCast` bisa deteksi kolom BINARY |
+| `lib/parsers/text_parser.js` | Tambah `charset: field.characterSet` di `wrap()` | Sama seperti di atas untuk text (query) protocol |
+| `lib/packets/encode_parameter.js` | `undefined` → `''` + `Types.NULL` daripada throw | Cegah crash dari parameter undefined yang tidak terduga |
+| `typings/.../typeCast.d.ts` | Tambah `charset: number` ke `Field` | TypeScript type untuk penggunaan `field.charset` yang baru |
+
+### named-placeholders: 1.1.3 → 1.1.6
+
+File patch diganti dari `patches/named-placeholders+1.1.3.patch` ke `patches/named-placeholders+1.1.6.patch`.
+
+named-placeholders@1.1.6 memakai `lru.min` untuk cache internal tree-parse (library LRU yang sama dengan mysql2). Factory-nya sekarang menerima `{ cache: N }` untuk mengatur ukurannya:
+
+```typescript
+// config.ts — diselaraskan ke 500 entry, sama dengan query meta cache di parseArguments
+require('named-placeholders')({ cache: 500 })
+```
+
+Patch custom tetap diterapkan ke 1.1.6:
+- Regex `RE_PARAM` diperluas untuk cocokkan `@param` selain `:param`, dengan negative lookbehind untuk skip kecocokan di dalam string yang dikutip
+- Stripping prefix key (`@key` / `:key` → `key`) sebelum token lookup
+- Nilai param `undefined` diganti `null` daripada di-push apa adanya
+
+---
+
+## Bug Fixes
+
+### `rawTransaction`: `transactionError` tidak pernah kembalikan string-nya
+
+**File:** `src/database/rawTransaction.ts`
+
+```typescript
+// Sebelum — template string dibuat tapi langsung dibuang (tidak ada return)
+const transactionError = (...) => {
+  `${queries.map(...).join('\n')}\n${JSON.stringify(parameters)}`;
+};
+
+// Sesudah
+const transactionError = (...) => {
+  return `${queries.map(...).join('\n')}\n${JSON.stringify(parameters)}`;
+};
+```
+
+Efek: `transactionError(...)` selalu mengembalikan `undefined`. Saat `err.sql` kosong, pesan di event `reoxmysql:transaction-error` dan logger tidak mengandung konteks query/parameter apapun.
+
+---
+
+### `typeCast`: NULL BLOB mengembalikan `[null]` bukan `null`
+
+**File:** `src/utils/typeCast.ts`
+
+mysql2@3.22.0 `text_parser.js` memanggil `typeCast` untuk **semua** field termasuk yang NULL. Di text protocol (`query()`), `field.buffer()` mengembalikan `null` untuk kolom NULL:
+
+```typescript
+// Sebelum — [null] adalah array satu elemen yang berisi null
+if (value === null) return [value];
+
+// Sesudah — return null langsung (SQL NULL → Lua nil)
+if (value === null) return null;
+```
+
+Kolom BLOB NULL sebelumnya dikirim ke Lua sebagai `{ [1] = nil }` (tabel satu elemen berisi nil). Sekarang tiba dengan benar sebagai `nil`.
 
 ---
 
@@ -432,40 +511,46 @@ besar (mis. vehicle save 100 mobil), penghematan alokasi mulai terasa di GC.
 
 ---
 
-### Pool: maxIdle, idleTimeout, keepAlive 0 ms
+### Pool: maxIdle, idleTimeout, keepAlive 0 ms, gracefulEnd, maxPreparedStatements, compress
 
-**File:** `src/database/pool.ts`
+**File:** `src/database/pool.ts`, `src/config.ts`
 
-Dua convar baru dan penyesuaian keep-alive:
+Convar baru dan opsi mysql2@3.22.0:
 
 ```typescript
+// pool.ts
 const maxIdle = GetConvarInt('re_mysql_max_idle_connections', connectionLimit);
 const idleTimeout = GetConvarInt('re_mysql_idle_timeout', 60000);
 
 createPool({
-  ...config,
+  ...config,   // gracefulEnd, maxPreparedStatements, compress dari getConnectionOptions()
   connectionLimit,
   waitForConnections: true,
   queueLimit,
   maxIdle,
   idleTimeout,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0, // dari 10_000 — deteksi socket mati lebih cepat
+  keepAliveInitialDelay: 0,
 });
+
+// config.ts
+return {
+  ...options,
+  gracefulEnd: GetConvarInt('re_mysql_graceful_end', 1) !== 0,
+  maxPreparedStatements: GetConvarInt('re_mysql_max_prepared_statements', 500),
+  compress: GetConvarInt('re_mysql_compress', 0) !== 0,
+  ...
+};
 ```
 
-- `re_mysql_max_idle_connections` memberi ops kontrol atas berapa banyak socket
-  yang ditahan saat quiet hours — penting untuk ops yang menjalankan banyak
-  resource FiveM di satu instance MySQL.
-- `re_mysql_idle_timeout` mengeluarkan koneksi idle yang sudah lewat ambang
-  batas supaya `wait_timeout` MySQL tidak memutuskannya diam-diam.
-- `keepAliveInitialDelay: 0` mengirim TCP keep-alive probe pertama segera
-  setelah socket idle, bukan menunggu 10 detik. Window di mana pool bisa
-  membagikan koneksi mati setelah outage jaringan ditutup.
+- `re_mysql_max_idle_connections` — kontrol jumlah koneksi yang dipertahankan saat quiet hours.
+- `re_mysql_idle_timeout` — keluarkan koneksi idle yang sudah lewat ambang supaya `wait_timeout` MySQL tidak memutusnya diam-diam.
+- `keepAliveInitialDelay: 0` — kirim probe TCP keep-alive pertama segera saat socket idle, window koneksi mati setelah network outage tertutup.
+- `re_mysql_graceful_end` (baru) — saat koneksi idle di-recycle, kirim COM_QUIT sebelum tutup socket. MySQL langsung cleanup thread-nya. Tanpa ini (`destroy()`), MySQL tunggu TCP timeout, `Aborted_clients` naik, dan ada baris "sleep" di `SHOW PROCESSLIST`.
+- `re_mysql_max_prepared_statements` (baru) — mysql2@3.22.0 buat LRU cache via `lru.min` per koneksi dengan default 16.000 slot. Server FiveM biasa punya < 200 query `execute()` unik, jadi 500 sudah lebih dari cukup dan hemat memori.
+- `re_mysql_compress` (baru) — kompresi protokol MySQL. Hanya berguna kalau DB server di mesin berbeda. Di localhost atau LAN, overhead CPU lebih besar dari penghematan bandwidth.
 
-Default `maxIdle = connectionLimit` sehingga perilaku lama (pertahankan
-seluruh pool hangat) tetap jadi default — tidak ada regressi untuk instalasi
-yang sudah ada.
+Default `maxIdle = connectionLimit` mempertahankan perilaku lama — tidak ada regresi untuk instalasi yang sudah ada.
 
 ---
 
