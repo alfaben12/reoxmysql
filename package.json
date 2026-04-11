@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "build": "bun build:root && lerna run build",
+    "release": "bun build:root && lerna run build && node scripts/create-release.js",
     "build:root": "node build.js && cd lib && tsc",
     "watch": "esbuild --watch --bundle --platform=node --target=node16.9.1 src/index.ts --outfile=dist/build.js",
     "lib": "tsc --project lib/tsconfig.lib.json",
