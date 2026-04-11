@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(robocopy \"E:\\\\esx-legacy\\\\txData\\\\ESXLegacy_381884.base\\\\resources\\\\[standalone]\\\\oxmysql\" \"E:\\\\esx-legacy\\\\txData\\\\ESXLegacy_381884.base\\\\resources\\\\[standalone]\\\\reoxmysql\" /E /XD node_modules /NFL /NDL /NJH /NJS /nc /ns /np)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(powershell:*)"
+    ]
+  }
+}

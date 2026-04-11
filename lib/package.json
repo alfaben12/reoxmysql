@@ -1,0 +1,25 @@
+{
+  "name": "@communityox/oxmysql",
+  "version": "1.4.3",
+  "description": "Exports wrapper for oxmysql",
+  "types": "MySQL.d.ts",
+  "main": "MySQL.js",
+  "scripts": {
+    "prepublish": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/communityox/oxmysql.git"
+  },
+  "keywords": [
+    "fivem",
+    "oxmysql",
+    "sql"
+  ],
+  "author": "Overextended",
+  "license": "LGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/communityox/oxmysql/issues"
+  },
+  "homepage": "https://github.com/communityox/oxmysql#readme"
+}
