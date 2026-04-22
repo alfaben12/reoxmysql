@@ -119,3 +119,34 @@ export async function createConnectionPool() {
     console.log(config);
   }
 }
+
+// Adaptive batch concurrency cap — reads live idle-connection count so the cap
+// shrinks automatically when the pool is under load and expands when it is idle.
+// Falls back to the static 60%-of-total formula if the pool isn't up yet or the
+// internal field is unavailable (version change / mariadb API change).
+export function getLiveBatchLimit(paramCount: number): number {
+  const connectionLimit = GetConvarInt('re_mysql_connection_limit', 25);
+
+  let idleCount: number;
+  try {
+    if (!pool) {
+      idleCount = connectionLimit;
+    } else if (mysql_connector === 'mariadb') {
+      // mariadb exposes idleConnections() as a public method
+      idleCount = typeof (pool as any).idleConnections === 'function'
+        ? (pool as any).idleConnections()
+        : connectionLimit;
+    } else {
+      // mysql2 stores free connections in an internal array; fall back if absent
+      idleCount = Array.isArray((pool as any)._freeConnections)
+        ? (pool as any)._freeConnections.length
+        : connectionLimit;
+    }
+  } catch {
+    idleCount = connectionLimit;
+  }
+
+  // Reserve 40% of idle connections for SELECT / non-batch queries.
+  // Math.max(4) ensures the batch always has at least 4 workers regardless of load.
+  return Math.min(Math.max(4, Math.floor(idleCount * 0.6)), paramCount);
+}

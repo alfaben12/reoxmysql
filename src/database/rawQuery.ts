@@ -56,16 +56,28 @@ export const rawQuery = async (
 
     validateResultSet(invokingResource, query, result);
 
-    if (!cb) return parseResponse(type, result);
+    const parsed = parseResponse(type, result);
 
-    try {
-      cb(parseResponse(type, result));
-    } catch (err) {
-      if (typeof err === 'string') {
-        if (err.includes('SCRIPT ERROR:')) return console.log(err);
-        console.log(`^1SCRIPT ERROR in invoking resource ${invokingResource}: ${err}^0`);
+    // Release back to pool before crossing into Lua. cb() is synchronous across
+    // the JS→Lua bridge — the connection would otherwise sit idle for the entire
+    // duration of Lua execution. release() is idempotent; using-dispose is a no-op.
+    connection.release();
+
+    if (!cb) return parsed;
+
+    // Defer the Lua callback by one macrotask. Under concurrent query load, other
+    // query completions that resolved as microtasks in this same tick can queue
+    // their results before any one of them monopolises the JS→Lua bridge.
+    setImmediate(() => {
+      try {
+        cb!(parsed);
+      } catch (err) {
+        if (typeof err === 'string') {
+          if (err.includes('SCRIPT ERROR:')) return console.log(err);
+          console.log(`^1SCRIPT ERROR in invoking resource ${invokingResource}: ${err}^0`);
+        }
       }
-    }
+    });
   } catch (err: any) {
     logError(invokingResource, cb, isPromise, err, query, parameters, true);
   }

@@ -1,23 +1,42 @@
 import { CFXParameters } from '../types';
+import type { QueryType } from '../types';
 
-// Pre-computed executeType lookup on the first token of the query.  Using
-// indexOf(' ') + switch is cheap, but the typeof check + the substring alloc
-// was being paid on every single call.  This version avoids the substring
-// allocation by comparing charCodes of a known-length prefix.
-export const executeType = (query: string) => {
+interface ExecuteMeta { type: QueryType; placeholders: number; }
+const _executeMetaCache = new Map<string, ExecuteMeta>();
+const EXECUTE_META_CACHE_MAX = 500;
+
+// Combined cache for query type + placeholder count, keyed by query string.
+// Replaces the per-call substring allocation from executeType() and the
+// query.split('?') array allocation from the placeholder count.
+// Both values are pure functions of the query text and never need re-computing
+// for the same string.
+export function getExecuteMeta(query: string): ExecuteMeta {
   if (typeof query !== 'string') throw new Error(`Expected query to be a string but received ${typeof query} instead.`);
 
-  switch (query.substring(0, query.indexOf(' '))) {
-    case 'INSERT':
-      return 'insert';
+  let meta = _executeMetaCache.get(query);
+  if (meta !== undefined) return meta;
+
+  const spaceIdx = query.indexOf(' ');
+  let type: QueryType;
+  switch (spaceIdx === -1 ? query : query.substring(0, spaceIdx)) {
+    case 'INSERT': type = 'insert'; break;
     case 'UPDATE':
-      return 'update';
-    case 'DELETE':
-      return 'update';
-    default:
-      return null;
+    case 'DELETE': type = 'update'; break;
+    default: type = null;
   }
-};
+
+  // Count '?' characters — equivalent to query.split('?').length - 1 without
+  // the intermediate array allocation.
+  let placeholders = 0;
+  for (let i = 0; i < query.length; i++) {
+    if (query[i] === '?') placeholders++;
+  }
+
+  meta = { type, placeholders };
+  if (_executeMetaCache.size >= EXECUTE_META_CACHE_MAX) _executeMetaCache.clear();
+  _executeMetaCache.set(query, meta);
+  return meta;
+}
 
 export const parseExecute = (placeholders: number, parameters: CFXParameters) => {
   if (!parameters || typeof parameters !== 'object') return [];

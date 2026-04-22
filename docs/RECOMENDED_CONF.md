@@ -10,6 +10,10 @@ Put them in `server.cfg` **before** `ensure reoxmysql`.
 ```cfg
 # Required
 set re_mysql_connection_string "mysql://user:password@localhost/database"
+
+# Optional — choose database engine (default: mysql2)
+# set re_mysql_connector "mysql2"
+# set re_mysql_connector "mariadb"
 ```
 
 If this is only for local dev or a small server (<50 concurrent players), this is enough. Leave the rest on the safe defaults.
@@ -380,6 +384,7 @@ ALTER TABLE apartments     ADD INDEX idx_owner (owner);
 | Convar                                 | Type      | Default   | Description                                                             |
 | -------------------------------------- | --------- | --------- | ----------------------------------------------------------------------- |
 | `re_mysql_connection_string`           | string    | `""`      | MySQL connection URI or `key=value` format. **Required.**               |
+| `re_mysql_connector`                   | string    | `mysql2`  | Database engine: `mysql2` or `mariadb`                                  |
 | `re_mysql_connection_limit`            | int       | `25`      | Maximum concurrent MySQL connections                                    |
 | `re_mysql_max_idle_connections`        | int       | `= limit` | Maximum idle connections kept alive in the pool                         |
 | `re_mysql_idle_timeout`                | int       | `60000`   | Idle timeout (ms) — idle connections longer than this get closed        |
@@ -410,11 +415,11 @@ set re_mysql_connection_string "host=127.0.0.1;user=user;password=password;datab
 
 ### Query string options (URI format)
 
-| Option               | Example                           | Description                                      |
-| -------------------- | --------------------------------- | ------------------------------------------------ |
-| `charset`            | `charset=utf8mb4`                 | Always use utf8mb4                               |
-| `namedPlaceholders`  | `namedPlaceholders=false`         | Disable it if all queries use `?`                |
-| `connectTimeout`     | `connectTimeout=10000`            | Connection timeout in ms (default 60000)         |
-| `ssl`                | `ssl={"rejectUnauthorized":true}` | Enable TLS                                       |
-| `multipleStatements` | `multipleStatements=false`        | Do not enable in production (SQL injection risk) |
+| Option               | Example                           | Description                                         |
+| -------------------- | --------------------------------- | --------------------------------------------------- |
+| `charset`            | `charset=utf8mb4`                 | Always use utf8mb4                                  |
+| `namedPlaceholders`  | `namedPlaceholders=false`         | Disable it if all queries use `?`                   |
+| `connectTimeout`     | `connectTimeout=10000`            | Connection timeout in ms (default 60000)            |
+| `ssl`                | `ssl={"rejectUnauthorized":true}` | Enable TLS                                          |
+| `multipleStatements` | `multipleStatements=false`        | Do not enable in production (SQL injection risk)    |
 | `compress`           | `compress=true`                   | Network compression — remote DB only, not localhost |

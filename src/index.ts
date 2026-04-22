@@ -1,6 +1,7 @@
 import type { CFXCallback, CFXParameters, TransactionQuery } from './types';
 import { rawQuery, rawExecute, rawTransaction, pool, poolReady } from './database';
 import { startTransaction } from 'database/startTransaction';
+import { rawDefer } from 'database/rawDefer';
 import('./update');
 
 const MySQL = {} as Record<string, Function>;
@@ -101,6 +102,30 @@ MySQL.rawExecute = (
   isPromise?: boolean
 ) => {
   rawExecute(invokingResource, query, parameters, cb, isPromise);
+};
+
+// Tick-batched write variants — identical API to MySQL.update / MySQL.insert but
+// coalesce writes to the same SQL within one event-loop tick into a single parallel
+// batch.  Use for fire-and-forget saves (player position, health, stats) where
+// immediate execution order relative to other queries is not required.
+MySQL.deferUpdate = (
+  query: string,
+  parameters: CFXParameters,
+  cb: CFXCallback,
+  invokingResource = GetInvokingResource(),
+  isPromise?: boolean
+) => {
+  rawDefer(invokingResource, query, parameters, cb, isPromise);
+};
+
+MySQL.deferInsert = (
+  query: string,
+  parameters: CFXParameters,
+  cb: CFXCallback,
+  invokingResource = GetInvokingResource(),
+  isPromise?: boolean
+) => {
+  rawDefer(invokingResource, query, parameters, cb, isPromise);
 };
 
 for (const key in MySQL) {

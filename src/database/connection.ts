@@ -109,17 +109,15 @@ export class MySql {
     return this.connection.commit();
   }
 
-  // Explicit release without transaction semantics — used by parallel batch execute
   release() {
+    if (!(this.id in activeConnections)) return;
     delete activeConnections[this.id];
     this.connection.release();
   }
 
   [Symbol.dispose]() {
     if (this.transaction) this.commit();
-
-    delete activeConnections[this.id];
-    this.connection.release();
+    this.release();
   }
 }
 
@@ -149,14 +147,14 @@ class MariaDbConnection {
   commit()           { delete this.transaction;  return this.connection.commit(); }
 
   release() {
+    if (!(this.id in activeConnections)) return;
     delete activeConnections[this.id];
     this.connection.release();
   }
 
   [Symbol.dispose]() {
     if (this.transaction) this.commit();
-    delete activeConnections[this.id];
-    this.connection.release();
+    this.release();
   }
 }
 

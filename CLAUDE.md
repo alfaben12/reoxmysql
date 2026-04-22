@@ -10,16 +10,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Install dependencies
-rtk bun install
+bun install
 
 # Build (bundles src/ via esbuild + compiles lib/ via tsc)
-rtk bun run build
+bun run build
 
 # Build watch mode during development
-rtk bun run watch
+bun run watch
 
 # Build with release package
-rtk bun run release
+bun run release
 ```
 
 Build output: `dist/build.js` (FiveM server script entry point) and `lib/MySQL.js` + `lib/MySQL.d.ts` (Lua-callable library exports).
@@ -31,9 +31,9 @@ Build output: `dist/build.js` (FiveM server script entry point) and `lib/MySQL.j
 `src/tsconfig.json` sets `"baseUrl": "."` (relative to `src/`). All bare imports without a path prefix resolve from `src/`:
 
 ```typescript
-import { typeCast } from 'utils/typeCast';     // → src/utils/typeCast.ts
-import { pool }     from 'database/pool';       // → src/database/pool.ts
-import { mysql_connector } from 'config';        // → src/config.ts
+import { typeCast } from 'utils/typeCast'; // → src/utils/typeCast.ts
+import { pool } from 'database/pool'; // → src/database/pool.ts
+import { mysql_connector } from 'config'; // → src/config.ts
 ```
 
 esbuild resolves these via `tsconfig-paths`-equivalent bundler resolution. No `../` chains needed within `src/`.
@@ -68,6 +68,7 @@ mariadb does not support `typeCast`; instead `MariaDbConnection` normalizes quer
 ### mysql2 Type Casting (`src/utils/typeCast.ts`)
 
 mysql2's `typeCast` callback defines the canonical behavior that mariadb normalization must match:
+
 - `DATETIME`/`TIMESTAMP`/`NEWDATE` → `new Date(string).getTime()` (ms)
 - `DATE` → `new Date(string + ' 00:00:00').getTime()` (ms)
 - `TINY` length=1 → boolean (`field.string() === '1'`)
@@ -114,6 +115,7 @@ using connection = await getConnection();
 ### `parseResponse` Result Shaping
 
 `src/utils/parseResponse.ts` maps raw driver results to the shape Lua scripts expect:
+
 - `'single'` → `result[0] ?? null`
 - `'scalar'` → first value of first row (`for (key in row) return row[key]`)
 - `'insert'` → `result.insertId ?? null`
@@ -124,19 +126,19 @@ using connection = await getConnection();
 
 All convars use the `re_mysql_` prefix:
 
-| Convar | Default | Description |
-|---|---|---|
-| `re_mysql_connection_string` | `''` | MySQL URI or `host=…;user=…;password=…;database=…` |
-| `re_mysql_connector` | `'mysql2'` | `'mysql2'` or `'mariadb'` |
-| `re_mysql_connection_limit` | `25` | Max pool connections |
-| `re_mysql_queue_limit` | `0` (unlimited) | mysql2 only |
-| `re_mysql_max_idle_connections` | `= connection_limit` | mysql2 only |
-| `re_mysql_idle_timeout` | `60000` (ms) | Divided by 1000 for mariadb (which uses seconds) |
-| `re_mysql_transaction_isolation_level` | `2` | 1=REPEATABLE READ, 2=READ COMMITTED, 3=READ UNCOMMITTED, 4=SERIALIZABLE |
-| `re_mysql_slow_query_warning` | `200` (ms) | Log queries slower than this |
-| `re_mysql_debug` | `'false'` | `'false'`, `'true'`, or JSON array of resource names |
-| `re_mysql_ui` | `'false'` | Enable in-game `/mysql` dashboard |
-| `re_mysql_log_size` | `100` | Max query log entries per resource |
-| `re_mysql_graceful_end` | `1` | Send COM_QUIT on idle close (mysql2 only) |
-| `re_mysql_compress` | `0` | Enable wire compression |
-| `re_mysql_max_prepared_statements` | `500` | Per-connection LRU prepared statement cache |
+| Convar                                 | Default              | Description                                                             |
+| -------------------------------------- | -------------------- | ----------------------------------------------------------------------- |
+| `re_mysql_connection_string`           | `''`                 | MySQL URI or `host=…;user=…;password=…;database=…`                      |
+| `re_mysql_connector`                   | `'mysql2'`           | `'mysql2'` or `'mariadb'`                                               |
+| `re_mysql_connection_limit`            | `25`                 | Max pool connections                                                    |
+| `re_mysql_queue_limit`                 | `0` (unlimited)      | mysql2 only                                                             |
+| `re_mysql_max_idle_connections`        | `= connection_limit` | mysql2 only                                                             |
+| `re_mysql_idle_timeout`                | `60000` (ms)         | Divided by 1000 for mariadb (which uses seconds)                        |
+| `re_mysql_transaction_isolation_level` | `2`                  | 1=REPEATABLE READ, 2=READ COMMITTED, 3=READ UNCOMMITTED, 4=SERIALIZABLE |
+| `re_mysql_slow_query_warning`          | `200` (ms)           | Log queries slower than this                                            |
+| `re_mysql_debug`                       | `'false'`            | `'false'`, `'true'`, or JSON array of resource names                    |
+| `re_mysql_ui`                          | `'false'`            | Enable in-game `/mysql` dashboard                                       |
+| `re_mysql_log_size`                    | `100`                | Max query log entries per resource                                      |
+| `re_mysql_graceful_end`                | `1`                  | Send COM_QUIT on idle close (mysql2 only)                               |
+| `re_mysql_compress`                    | `0`                  | Enable wire compression                                                 |
+| `re_mysql_max_prepared_statements`     | `500`                | Per-connection LRU prepared statement cache                             |

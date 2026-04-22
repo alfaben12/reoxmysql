@@ -1,18 +1,18 @@
-# OxMySQL exports wrapper for FiveM
+# ReoxMySQL Library Exports
 
-Types are fully supported and you will get intellisense on the `oxmysql` object when using it.
+TypeScript/JavaScript library for FiveM server-side scripts that use `reoxmysql`.
 
 ## Installation
 
 ```yaml
 # With pnpm
-pnpm add @communityox/oxmysql
+pnpm add reoxmysql
 
 # With Yarn
-yarn add @communityox/oxmysql
+yarn add reoxmysql
 
 # With npm
-npm install @communityox/oxmysql
+npm install reoxmysql
 ```
 
 ## Usage
@@ -20,32 +20,46 @@ npm install @communityox/oxmysql
 Import as module:
 
 ```js
-import { oxmysql } from '@communityox/oxmysql';
+import { oxmysql } from 'reoxmysql';
 ```
 
 Import with require:
 
 ```js
-const { oxmysql } = require('@communityox/oxmysql');
+const { oxmysql } = require('reoxmysql');
+```
+
+## Example
+
+```js
+// Callback style
+oxmysql
+  .scalar('SELECT username FROM users', (result) => {
+    console.log(result);
+  })
+  .catch(console.error);
+
+// Promise style
+oxmysql
+  .scalar('SELECT username FROM users')
+  .then((result) => {
+    console.log(result);
+  })
+  .catch(console.error);
+
+// Async/await
+const result = await oxmysql.scalar('SELECT username FROM users').catch(console.error);
+console.log(result);
 ```
 
 ## Documentation
 
-[View documentation](https://coxdocs.dev/oxmysql)
+See the main docs:
 
-```js
-oxmysql.scalar('SELECT username FROM users', (result) => {
-    console.log(result)
-}).catch(console.error)
-
-oxmysql.scalar('SELECT username FROM users').then((result) => {
-    console.log(result)
-}).catch(console.error)
-
-const result = await oxmysql.scalar('SELECT username FROM users').catch(console.error)
-console.log(result)
-```
+- [`docs/CHANGES.md`](../docs/CHANGES.md) — Full changelog and API reference
+- [`docs/RECOMENDED_CONF.md`](../docs/RECOMENDED_CONF.md) — Configuration guide
+- [`docs/PROCONS.md`](../docs/PROCONS.md) — mysql2 vs mariadb comparison
 
 ## License
 
-LGPL-3.0
+LGPL-3.0-or-later
