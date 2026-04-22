@@ -32,7 +32,7 @@ export const rawQuery = async (
   if (!connection) return;
 
   try {
-    const hasProfiler = mysql_debug && await runProfiler(connection, invokingResource);
+    const hasProfiler = mysql_debug && (await runProfiler(connection, invokingResource));
     // Only measure time when something will actually consume it: profiler,
     // slow-query warning, or the in-game UI.  Skipping performance.now() on
     // the fast path removes a per-query call pair at high QPS.
@@ -50,8 +50,7 @@ export const rawQuery = async (
       const elapsed = performance.now() - startTime;
       // Inline gate: skip the logQuery call entirely on the fast path so we
       // don't pay function-call + argument-marshal overhead on every SELECT.
-      if (elapsed >= mysql_slow_query_warning || mysql_ui)
-        logQuery(invokingResource, query, elapsed, parameters);
+      if (elapsed >= mysql_slow_query_warning || mysql_ui) logQuery(invokingResource, query, elapsed, parameters);
     }
 
     validateResultSet(invokingResource, query, result);
@@ -65,19 +64,14 @@ export const rawQuery = async (
 
     if (!cb) return parsed;
 
-    // Defer the Lua callback by one macrotask. Under concurrent query load, other
-    // query completions that resolved as microtasks in this same tick can queue
-    // their results before any one of them monopolises the JS→Lua bridge.
-    setImmediate(() => {
-      try {
-        cb!(parsed);
-      } catch (err) {
-        if (typeof err === 'string') {
-          if (err.includes('SCRIPT ERROR:')) return console.log(err);
-          console.log(`^1SCRIPT ERROR in invoking resource ${invokingResource}: ${err}^0`);
-        }
+    try {
+      cb!(parsed);
+    } catch (err) {
+      if (typeof err === 'string') {
+        if (err.includes('SCRIPT ERROR:')) return console.log(err);
+        console.log(`^1SCRIPT ERROR in invoking resource ${invokingResource}: ${err}^0`);
       }
-    });
+    }
   } catch (err: any) {
     logError(invokingResource, cb, isPromise, err, query, parameters, true);
   }

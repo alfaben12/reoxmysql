@@ -114,7 +114,7 @@ export const rawExecute = async (
 
       if (!cb) return response.length === 1 ? response[0] : response;
 
-      setImmediate(() => invokeCallback(cb!, response, type, unpack, invokingResource));
+      invokeCallback(cb!, response, type, unpack, invokingResource);
     } catch (err: any) {
       logError(invokingResource, cb, isPromise, err, query, parameters);
     }
@@ -129,7 +129,7 @@ export const rawExecute = async (
   if (!connection) return;
 
   try {
-    const hasProfiler = mysql_debug && await runProfiler(connection, invokingResource);
+    const hasProfiler = mysql_debug && (await runProfiler(connection, invokingResource));
     const parametersLength = parameters.length == 0 ? 1 : parameters.length;
     const response = [] as any[];
 
@@ -151,8 +151,7 @@ export const rawExecute = async (
         await profileBatchStatements(connection, invokingResource, query, parameters, index < 100 ? 0 : index);
       } else if (startTime) {
         const elapsed = performance.now() - startTime;
-        if (elapsed >= mysql_slow_query_warning || mysql_ui)
-          logQuery(invokingResource, query, elapsed, values);
+        if (elapsed >= mysql_slow_query_warning || mysql_ui) logQuery(invokingResource, query, elapsed, values);
       }
 
       validateResultSet(invokingResource, query, result);
@@ -162,7 +161,7 @@ export const rawExecute = async (
 
     if (!cb) return response.length === 1 ? response[0] : response;
 
-    setImmediate(() => invokeCallback(cb!, response, type, unpack, invokingResource));
+    invokeCallback(cb!, response, type, unpack, invokingResource);
   } catch (err: any) {
     logError(invokingResource, cb, isPromise, err, query, parameters);
   }
