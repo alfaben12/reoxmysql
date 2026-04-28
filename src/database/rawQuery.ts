@@ -27,7 +27,10 @@ export const rawQuery = async (
     return logError(invokingResource, cb, isPromise, err, query, parameters);
   }
 
-  using connection = await getConnection(connectionId);
+  // Route to the correct pool: writes (INSERT/UPDATE) go to writePool so they
+  // never block reads. Everything else (SELECT, scalar, single) goes to readPool.
+  const poolType = (type === 'insert' || type === 'update') ? 'write' : 'read';
+  using connection = await getConnection(connectionId, poolType);
 
   if (!connection) return;
 

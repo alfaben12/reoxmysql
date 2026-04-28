@@ -56,7 +56,7 @@ async function runBatch(query: string, entries: BatchEntry[]): Promise<void> {
     while (idx < entries.length) {
       const i = idx++;
       const e = entries[i];
-      const conn = await getConnection();
+      const conn = await getConnection(undefined, 'write');
       try {
         const startTime = performance.now();
         const result = await conn.execute(query, e.values);

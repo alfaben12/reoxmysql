@@ -2,27 +2,40 @@ import { getConnectionOptions, mysql_connector, mysql_transaction_isolation_leve
 import { createPool } from 'mysql2/promise';
 import type { RowDataPacket } from 'mysql2/promise';
 
-export let pool: any;
+export let readPool: any;
+export let writePool: any;
+// keep `pool` export for any consumer that still references it directly
+export { writePool as pool };
 export let dbVersion = '';
 
-// Resolved once the pool is ready — replaces busy-wait polling in consumers
 let _poolReadyResolve: (() => void) | null = null;
 export const poolReady = new Promise<void>((resolve) => {
   _poolReadyResolve = resolve;
 });
 
+function attachIsolationListener(dbPool: any) {
+  dbPool.on('connection', (conn: any) => {
+    conn.query(mysql_transaction_isolation_level).catch(() => {});
+  });
+}
+
 export async function createConnectionPool() {
   const config = getConnectionOptions();
   const connectionLimit = GetConvarInt('re_mysql_connection_limit', 25);
-  const queueLimit = GetConvarInt('re_mysql_queue_limit', 0);
-  const maxIdle = GetConvarInt('re_mysql_max_idle_connections', connectionLimit);
-  const idleTimeout = GetConvarInt('re_mysql_idle_timeout', 60000);
+  const queueLimit      = GetConvarInt('re_mysql_queue_limit', 0);
+  const maxIdle         = GetConvarInt('re_mysql_max_idle_connections', connectionLimit);
+  const idleTimeout     = GetConvarInt('re_mysql_idle_timeout', 60000);
+
+  // Read pool gets 60% of connections, write pool gets the rest.
+  // Both limits are tunable via convars so operators can adjust the ratio.
+  const readLimit  = GetConvarInt('re_mysql_read_connections',  Math.ceil(connectionLimit * 0.6));
+  const writeLimit = GetConvarInt('re_mysql_write_connections', connectionLimit - readLimit);
 
   try {
     if (mysql_connector === 'mariadb') {
       const mariadb = require('mariadb');
 
-      const mariadbConfig: any = {
+      const mariadbBase: any = {
         host:              config.host,
         port:              config.port,
         user:              config.user,
@@ -35,72 +48,60 @@ export async function createConnectionPool() {
         insertIdAsNumber:  true,
         bigIntAsNumber:    true,
         prepareCacheSize:  (config as any).maxPreparedStatements ?? 500,
-        connectionLimit,
-        // mariadb uses seconds; re_mysql_idle_timeout is milliseconds
         idleTimeout:       Math.round(idleTimeout / 1000),
       };
 
-      const dbPool = mariadb.createPool(mariadbConfig);
+      readPool  = mariadb.createPool({ ...mariadbBase, connectionLimit: readLimit });
+      writePool = mariadb.createPool({ ...mariadbBase, connectionLimit: writeLimit });
 
-      // 'connection' event fires (via setImmediate) when a NEW physical connection
-      // is established. conn is a ConnectionPromise — has promise-based query().
-      // pool-promise wraps handler errors in try/catch so a throw here is safe.
-      dbPool.on('connection', (conn: any) => {
-        conn.query(mysql_transaction_isolation_level).catch(() => {});
-      });
+      attachIsolationListener(readPool);
+      attachIsolationListener(writePool);
 
-      // Verify connectivity with explicit connection management to avoid race
-      // conditions. mariadb.getConnection() resolves after the TCP+auth handshake;
-      // the 'connection' setImmediate fires after we release.
-      const testConn = await dbPool.getConnection();
+      // Verify connectivity once via read pool
+      const testConn = await readPool.getConnection();
       const rows = await testConn.query('SELECT VERSION() as version');
       await testConn.release();
       dbVersion = `^5[${rows[0].version}]`;
 
       console.log(`${dbVersion} ^2Database server connection established!^0`);
       console.log(
-        `^2Pool: ${connectionLimit} max, idleTimeout: ${idleTimeout}ms, maxStmt: ${mariadbConfig.prepareCacheSize}, [mariadb]^0`
+        `^2Pool: read=${readLimit} write=${writeLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${mariadbBase.prepareCacheSize}, [mariadb]^0`
       );
 
       if ((config as any).multipleStatements) {
         console.warn(`multipleStatements is enabled. Used incorrectly, this option may cause SQL injection.`);
       }
-
-      pool = dbPool;
-      _poolReadyResolve?.();
-      _poolReadyResolve = null;
     } else {
-      const dbPool = createPool({
+      const baseConfig = {
         ...config,
-        connectionLimit,
         waitForConnections: true,
         queueLimit,
-        maxIdle,
         idleTimeout,
         enableKeepAlive: true,
         keepAliveInitialDelay: 0,
-      });
+      };
 
-      dbPool.on('connection', (connection) => {
-        connection.query(mysql_transaction_isolation_level);
-      });
+      readPool  = createPool({ ...baseConfig, connectionLimit: readLimit,  maxIdle: Math.ceil(maxIdle * 0.6) });
+      writePool = createPool({ ...baseConfig, connectionLimit: writeLimit, maxIdle: maxIdle - Math.ceil(maxIdle * 0.6) });
 
-      const [result] = (await dbPool.query('SELECT VERSION() as version')) as RowDataPacket[];
+      attachIsolationListener(readPool);
+      attachIsolationListener(writePool);
+
+      const [result] = (await readPool.query('SELECT VERSION() as version')) as RowDataPacket[];
       dbVersion = `^5[${result[0].version}]`;
 
       console.log(`${dbVersion} ^2Database server connection established!^0`);
       console.log(
-        `^2Pool: ${connectionLimit} max, ${maxIdle} idle, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${config.maxPreparedStatements ?? 500}, gracefulEnd: ${config.gracefulEnd ?? true}^0`
+        `^2Pool: read=${readLimit} write=${writeLimit}, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${config.maxPreparedStatements ?? 500}, gracefulEnd: ${config.gracefulEnd ?? true}^0`
       );
 
       if (config.multipleStatements) {
         console.warn(`multipleStatements is enabled. Used incorrectly, this option may cause SQL injection.`);
       }
-
-      pool = dbPool;
-      _poolReadyResolve?.();
-      _poolReadyResolve = null;
     }
+
+    _poolReadyResolve?.();
+    _poolReadyResolve = null;
   } catch (err: any) {
     const message = err.message?.includes('auth_gssapi_client')
       ? `Requested authentication using unknown plugin auth_gssapi_client.`
@@ -115,38 +116,32 @@ export async function createConnectionPool() {
     console.log(`See https://github.com/overextended/oxmysql/issues/154 for more information.`);
 
     if (config.password) config.password = '******';
-
     console.log(config);
   }
 }
 
-// Adaptive batch concurrency cap — reads live idle-connection count so the cap
-// shrinks automatically when the pool is under load and expands when it is idle.
-// Falls back to the static 60%-of-total formula if the pool isn't up yet or the
-// internal field is unavailable (version change / mariadb API change).
+// Adaptive batch concurrency cap — reads live idle count from the write pool
+// because batch operations (rawExecute parallel, tickBatcher) are always writes.
 export function getLiveBatchLimit(paramCount: number): number {
-  const connectionLimit = GetConvarInt('re_mysql_connection_limit', 25);
+  const writeLimit = GetConvarInt('re_mysql_write_connections',
+    Math.ceil(GetConvarInt('re_mysql_connection_limit', 25) * 0.4));
 
   let idleCount: number;
   try {
-    if (!pool) {
-      idleCount = connectionLimit;
+    if (!writePool) {
+      idleCount = writeLimit;
     } else if (mysql_connector === 'mariadb') {
-      // mariadb exposes idleConnections() as a public method
-      idleCount = typeof (pool as any).idleConnections === 'function'
-        ? (pool as any).idleConnections()
-        : connectionLimit;
+      idleCount = typeof (writePool as any).idleConnections === 'function'
+        ? (writePool as any).idleConnections()
+        : writeLimit;
     } else {
-      // mysql2 stores free connections in an internal array; fall back if absent
-      idleCount = Array.isArray((pool as any)._freeConnections)
-        ? (pool as any)._freeConnections.length
-        : connectionLimit;
+      idleCount = Array.isArray((writePool as any)._freeConnections)
+        ? (writePool as any)._freeConnections.length
+        : writeLimit;
     }
   } catch {
-    idleCount = connectionLimit;
+    idleCount = writeLimit;
   }
 
-  // Reserve 40% of idle connections for SELECT / non-batch queries.
-  // Math.max(4) ensures the batch always has at least 4 workers regardless of load.
   return Math.min(Math.max(4, Math.floor(idleCount * 0.6)), paramCount);
 }

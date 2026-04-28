@@ -75,6 +75,9 @@ export const rawExecute = async (
     return logError(invokingResource, cb, isPromise, err, query, parameters);
   }
 
+  // null type = SELECT-style execute → read pool; insert/update/execute → write pool
+  const poolType = type === null ? 'read' : 'write';
+
   // ── Parallel batch path ──────────────────────────────────────────────────
   // When debug/profiler is off and there is no pinned connection, execute each
   // parameter set concurrently using its own pool connection.  Concurrency is
@@ -94,7 +97,7 @@ export const rawExecute = async (
           const values = parameters[i];
           padValues(values, placeholders);
 
-          const conn = await getConnection();
+          const conn = await getConnection(undefined, poolType);
           try {
             const startTime = performance.now();
             const result = await conn.execute(query, values);
@@ -124,7 +127,7 @@ export const rawExecute = async (
   // ── Sequential path ──────────────────────────────────────────────────────
   // Used when: profiler is active (debug), a specific connection is pinned
   // (connectionId), or there is only a single parameter set.
-  using connection = await getConnection(connectionId);
+  using connection = await getConnection(connectionId, poolType);
 
   if (!connection) return;
 

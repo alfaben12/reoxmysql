@@ -1,9 +1,11 @@
 import type { Connection, PoolConnection } from 'mysql2/promise';
 import { scheduleTick } from '../utils/scheduleTick';
-import { pool, poolReady } from './pool';
+import { readPool, writePool, poolReady } from './pool';
 import type { CFXParameters } from 'types';
 import { typeCast, typeCastExecute } from 'utils/typeCast';
 import { mysql_connector } from 'config';
+
+export type PoolType = 'read' | 'write';
 
 (Symbol as any).dispose ??= Symbol('Symbol.dispose');
 
@@ -158,12 +160,13 @@ class MariaDbConnection {
   }
 }
 
-export async function getConnection(connectionId?: number) {
-  if (!pool) await poolReady;
+export async function getConnection(connectionId?: number, poolType: PoolType = 'write') {
+  if (!readPool && !writePool) await poolReady;
 
   if (connectionId) return activeConnections[connectionId];
 
-  const conn = await (pool as any).getConnection();
+  const targetPool = poolType === 'read' ? readPool : writePool;
+  const conn = await (targetPool as any).getConnection();
   return mysql_connector === 'mariadb'
     ? new MariaDbConnection(conn)
     : new MySql(conn as unknown as PromisePoolConnection);

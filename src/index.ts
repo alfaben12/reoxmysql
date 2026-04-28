@@ -1,5 +1,5 @@
 import type { CFXCallback, CFXParameters, TransactionQuery } from './types';
-import { rawQuery, rawExecute, rawTransaction, pool, poolReady } from './database';
+import { rawQuery, rawExecute, rawTransaction, readPool, poolReady } from './database';
 import { startTransaction } from 'database/startTransaction';
 import { rawDefer } from 'database/rawDefer';
 import('./update');
@@ -7,11 +7,11 @@ import('./update');
 const MySQL = {} as Record<string, Function>;
 
 MySQL.isReady = () => {
-  return pool ? true : false;
+  return readPool ? true : false;
 };
 
 MySQL.awaitConnection = async () => {
-  if (!pool) await poolReady;
+  if (!readPool) await poolReady;
 
   return true;
 };

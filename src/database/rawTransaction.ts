@@ -28,7 +28,7 @@ export const rawTransaction = async (
     return logError(invokingResource, cb, isPromise, err);
   }
 
-  using connection = await getConnection();
+  using connection = await getConnection(undefined, 'write');
 
   if (!connection) return;
 
