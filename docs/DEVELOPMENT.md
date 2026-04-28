@@ -5,8 +5,6 @@
 - [Bun](https://bun.sh/) runtime
 - Node.js 22+ (for FiveM CJS target compatibility)
 
-## Setup
-
 ```bash
 # 1. Install dependencies (use bun, not npm/yarn/pnpm)
 bun install

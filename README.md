@@ -56,7 +56,9 @@ No script changes are needed when switching. See [`docs/PROCONS.md`](docs/PROCON
 - Prepared statement LRU cache tunable via `re_mysql_max_prepared_statements`
 - Graceful idle connection recycling via `re_mysql_graceful_end`
 - Optional network compression via `re_mysql_compress`
-- Built on **mysql2@3.22.2**, **mariadb@3.5.2**, and **named-placeholders@1.1.6** with custom patches
+- Built-in read/write connection pool split (SELECT → read, WRITE → write)
+- `parallel` API for running multiple heterogeneous queries simultaneously
+- Node.js 22 + esbuild CJS target for FiveM compatibility
 
 ## Important Notes
 
@@ -117,11 +119,13 @@ Use `exports.reoxmysql` for all calls:
 | `startTransaction(fn)`             | Async function-based transaction (experimental)           |
 | `prepare(sql, params, cb)`         | Batch execute with prepared statements, response unpacked |
 | `rawExecute(sql, params, cb)`      | Batch execute without unpacking the response              |
+| `parallel(queries, cb)`            | Run multiple queries simultaneously, return all results   |
 | `deferUpdate(sql, params, cb)`     | UPDATE/DELETE — tick-batched, returns `affectedRows`      |
 | `deferInsert(sql, params, cb)`     | INSERT — tick-batched, returns `insertId`                 |
 | `isReady()`                        | Check whether the pool is ready (boolean)                 |
-| `awaitConnection()`                | Promise that resolves when the pool is ready              |
+| `awaitConnection()`                | Promise that resolves when the pool is ready               |
 | `*_async(...)`                     | Promise version of all exports above                      |
+| `parallel_async(queries)`          | Promise version of `parallel`                             |
 
 ## Development Tools
 

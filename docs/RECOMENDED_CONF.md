@@ -28,6 +28,10 @@ set re_mysql_connection_string "mysql://user:password@localhost/database"
 # Pool — the default 25 is already fine; raise it to 30-35 if you start seeing pool wait time
 set re_mysql_connection_limit  "30"
 
+# Optional: override read/write split (default: 60% read, 40% write)
+# set re_mysql_read_connections  "20"   # explicit read pool size — bypasses 60% calculation
+# set re_mysql_write_connections "10"   # explicit write pool size — overrides remaining
+
 # Idle pool: keep all connections warm (= connection_limit).
 # If your server is often quiet during certain hours and you want MySQL to relax a bit,
 # lower this number (for example 10) so idle connections get recycled.
@@ -63,6 +67,11 @@ set re_mysql_connection_string "mysql://user:password@localhost/database?charset
 # Going above 50 usually does not help much and can add overhead instead.
 # Do not go beyond MySQL's max_connections.
 set re_mysql_connection_limit  "40"
+
+# Optional: override read/write split (default: 60% read, 40% write)
+# If you set BOTH of these, connection_limit is ignored.
+# set re_mysql_read_connections  "30"
+# set re_mysql_write_connections "10"
 
 # Match connection_limit so every connection stays warm (hot pool).
 set re_mysql_max_idle_connections "40"
@@ -385,8 +394,10 @@ ALTER TABLE apartments     ADD INDEX idx_owner (owner);
 | -------------------------------------- | --------- | --------- | ----------------------------------------------------------------------- |
 | `re_mysql_connection_string`           | string    | `""`      | MySQL connection URI or `key=value` format. **Required.**               |
 | `re_mysql_connector`                   | string    | `mysql2`  | Database engine: `mysql2` or `mariadb`                                  |
-| `re_mysql_connection_limit`            | int       | `25`      | Maximum concurrent MySQL connections                                    |
-| `re_mysql_max_idle_connections`        | int       | `= limit` | Maximum idle connections kept alive in the pool                         |
+| `re_mysql_connection_limit`            | int       | `25`      | Maximum total concurrent connections (split into read/write) |
+| `re_mysql_read_connections`           | int       | `60% of limit` | Maximum connections for SELECT queries; overrides auto-split |
+| `re_mysql_write_connections`          | int       | `40% of limit` | Maximum connections for INSERT/UPDATE/DELETE                 |
+| `re_mysql_max_idle_connections`        | int       | `= limit` | Maximum idle connections kept alive in the pool              |
 | `re_mysql_idle_timeout`                | int       | `60000`   | Idle timeout (ms) — idle connections longer than this get closed        |
 | `re_mysql_graceful_end`                | int       | `1`       | `1` = send COM_QUIT before closing idle connections; `0` = destroy()    |
 | `re_mysql_max_prepared_statements`     | int       | `500`     | Per-connection LRU cache size for prepared statements                   |

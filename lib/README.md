@@ -50,6 +50,14 @@ oxmysql
 // Async/await
 const result = await oxmysql.scalar('SELECT username FROM users').catch(console.error);
 console.log(result);
+
+// Parallel queries (multiple heterogeneous queries run simultaneously)
+const results = await oxmysql.parallel_async([
+  { type: 'query',  query: 'SELECT * FROM users WHERE id = ?', params: [userId] },
+  { type: 'single', query: 'SELECT * FROM bans WHERE identifier = ?', params: [identifier] },
+  { type: 'insert', query: 'INSERT INTO log_auth (identifier, time) VALUES (?, ?)', params: [identifier, Date.now()] },
+]);
+console.log(results[0], results[1], results[2]);
 ```
 
 ## Documentation

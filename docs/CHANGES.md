@@ -34,7 +34,13 @@
 | mysql2 version               | Patched 3.11.3                 | Patched 3.22.2                                            |
 | mariadb version              | —                              | 3.5.2                                                     |
 | named-placeholders version   | Patched 1.1.3                  | Patched 1.1.6 (LRU cache via `lru.min`)                   |
-| Config documentation         | None                           | `RECOMENDED_CONF.md`                                      |
+| Read/write pool split       | Single pool                   | `readPool` (SELECT) + `writePool` (INSERT/UPDATE/DELETE) |
+| Parallel query API          | Not available                 | `MySQL.parallel` — simultaneous heterogeneous queries     |
+| Pool warm-up                | Cold-start each connection   | Pre-opens connections at startup (0–50 ms saved)         |
+| Query meta cache            | Clear-on-full                | LRU eviction (one entry removed, not all 500)             |
+| Regex object               | New RegExp per cache miss     | Static `PLACEHOLDER_RE` reused, `lastIndex` reset          |
+| Tick batch flush           | `setImmediate`               | `queueMicrotask` (faster, same tick)                       |
+| Config documentation       | None                          | `RECOMENDED_CONF.md`                                      |
 
 ---
 
@@ -569,6 +575,44 @@ MySQL.single("SELECT money FROM players WHERE id=?", {id}, cb) -- may read stale
 
 ---
 
+## Parallel Query API: `MySQL.parallel`
+
+**Files:** `src/database/rawParallel.ts`, `src/index.ts`
+
+Run multiple heterogeneous queries simultaneously — each query gets its own connection from the read (for SELECT) or write (for INSERT/UPDATE/DELETE) pool. Total wall-clock time equals the slowest individual query, not the sum of all queries.
+
+```lua
+-- Run 4 queries in parallel: 2 SELECTs + 2 INSERTs
+MySQL.parallel({
+    { type = "query", query = "SELECT * FROM users WHERE identifier = ?", params = { identifier } },
+    { type = "single", query = "SELECT * FROM banlist WHERE identifier = ?", params = { identifier } },
+    { type = "insert", query = "INSERT INTO log_auth (identifier, time) VALUES (?, ?)", params = { identifier, os.time() } },
+    { type = "update", query = "UPDATE users SET lastlogin = ? WHERE identifier = ?", params = { os.time(), identifier } }
+}, function(results)
+    -- results[0] = all users (array)
+    -- results[1] = ban info (single row or nil)
+    -- results[2] = insertId
+    -- results[3] = affectedRows
+end)
+
+-- Async version
+local results = exports.reoxmysql:parallel_async(queries)
+```
+
+**Query types:**
+
+| Type     | Result         | Pool used |
+| -------- | -------------- | --------- |
+| `query`  | Full row array | readPool   |
+| `single` | First row      | readPool   |
+| `scalar` | First column   | readPool   |
+| `insert` | insertId       | writePool  |
+| `update` | affectedRows   | writePool  |
+
+Omitting `type` defaults to `query` (full result set).
+
+---
+
 ## Available API
 
 Use `exports.reoxmysql` for all calls:
@@ -577,18 +621,20 @@ Use `exports.reoxmysql` for all calls:
 | ---------------------------------- | --------------------------------------------------------- |
 | `query(sql, params, cb)`           | SELECT - return all rows                                  |
 | `single(sql, params, cb)`          | SELECT - return the first row                             |
-| `scalar(sql, params, cb)`          | SELECT - return the first column from the first row       |
+| `scalar(sql, params, cb)`          | SELECT - return first column from the first row           |
 | `update(sql, params, cb)`          | UPDATE/DELETE - return `affectedRows`                     |
 | `insert(sql, params, cb)`          | INSERT - return `insertId`                                |
 | `transaction(queries, params, cb)` | Run multiple queries in a single transaction              |
 | `startTransaction(fn)`             | Async function-based transaction (experimental)           |
 | `prepare(sql, params, cb)`         | Batch execute with prepared statements, response unpacked |
 | `rawExecute(sql, params, cb)`      | Batch execute without unpacking the response              |
+| `parallel(queries, cb)`           | Run multiple heterogeneous queries simultaneously         |
 | `deferUpdate(sql, params, cb)`     | UPDATE/DELETE - tick-batched, returns `affectedRows`      |
 | `deferInsert(sql, params, cb)`     | INSERT - tick-batched, returns `insertId`                 |
 | `isReady()`                        | Check whether the pool is ready (boolean)                 |
 | `awaitConnection()`                | Promise that resolves when the pool is ready              |
 | `*_async(...)`                     | Promise version of all exports above                      |
+| `parallel_async(queries)`          | Promise version of `parallel`                             |
 
 ---
 
