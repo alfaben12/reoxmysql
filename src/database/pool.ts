@@ -13,6 +13,15 @@ export const poolReady = new Promise<void>((resolve) => {
   _poolReadyResolve = resolve;
 });
 
+// Pre-open `count` connections and release them immediately.  This forces the
+// TCP handshake + MySQL auth to happen at startup so the first real query hits
+// an already-warm connection instead of paying the 50-150 ms cold-start cost.
+async function warmUpPool(pool: any, count: number): Promise<void> {
+  if (count <= 0) return;
+  const conns = await Promise.all(Array.from({ length: count }, () => pool.getConnection()));
+  for (const c of conns) c.release();
+}
+
 function attachIsolationListener(dbPool: any) {
   dbPool.on('connection', (conn: any) => {
     conn.query(mysql_transaction_isolation_level).catch(() => {});
@@ -68,6 +77,11 @@ export async function createConnectionPool() {
         `^2Pool: read=${readLimit} write=${writeLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${mariadbBase.prepareCacheSize}, [mariadb]^0`
       );
 
+      // Warm up: pre-open a handful of connections so the first real queries
+      // don't pay the TCP + auth cold-start penalty (typically 50-150 ms each).
+      await warmUpPool(readPool,  Math.min(3, readLimit  - 1));
+      await warmUpPool(writePool, Math.min(2, writeLimit));
+
       if ((config as any).multipleStatements) {
         console.warn(`multipleStatements is enabled. Used incorrectly, this option may cause SQL injection.`);
       }
@@ -94,6 +108,11 @@ export async function createConnectionPool() {
       console.log(
         `^2Pool: read=${readLimit} write=${writeLimit}, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${config.maxPreparedStatements ?? 500}, gracefulEnd: ${config.gracefulEnd ?? true}^0`
       );
+
+      // Warm up: pre-open a handful of connections so the first real queries
+      // don't pay the TCP + auth cold-start penalty (typically 50-150 ms each).
+      await warmUpPool(readPool,  Math.min(3, readLimit  - 1));
+      await warmUpPool(writePool, Math.min(2, writeLimit));
 
       if (config.multipleStatements) {
         console.warn(`multipleStatements is enabled. Used incorrectly, this option may cause SQL injection.`);

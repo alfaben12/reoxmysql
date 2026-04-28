@@ -52,11 +52,22 @@ function normalizeMariaDbResult(result: any): any {
 
   const meta: any[] = (result as any).meta;
   if (!meta?.length) return result;
-  if (!meta.some((f) => needsNorm(f.columnType))) return result;
 
+  // Pre-filter once per result set — only fields that actually need transformation.
+  // Pure int/varchar queries (the common case) return an empty list → zero-copy fast path.
+  const transformFields = meta.filter((f) => needsNorm(f.columnType));
+  if (transformFields.length === 0) return result;
+
+  // Shallow-copy each row then patch only the fields that need normalization.
+  // This is faster than rebuilding the full object from scratch: the spread
+  // copies all fields at native speed, then we overwrite only the small subset
+  // that requires type conversion.
   return result.map((row: any) => {
-    const out: any = {};
-    for (const f of meta) { const k = f.name(); out[k] = normalizeField(row[k], f); }
+    const out: any = { ...row };
+    for (const f of transformFields) {
+      const k = f.name();
+      out[k] = normalizeField(row[k], f);
+    }
     return out;
   });
 }
