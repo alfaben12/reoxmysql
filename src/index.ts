@@ -2,6 +2,7 @@ import type { CFXCallback, CFXParameters, TransactionQuery } from './types';
 import { rawQuery, rawExecute, rawTransaction, readPool, poolReady } from './database';
 import { startTransaction } from 'database/startTransaction';
 import { rawDefer } from 'database/rawDefer';
+import { rawParallel, type ParallelEntry } from 'database/rawParallel';
 import('./update');
 
 const MySQL = {} as Record<string, Function>;
@@ -149,3 +150,28 @@ for (const key in MySQL) {
   global.exports(key, exp);
   global.exports(`${key}_async`, async_exp);
 }
+
+// MySQL.parallel is registered outside the loop because its signature differs
+// from the standard (query, params, cb, resource, isPromise) pattern.
+// It accepts an array of query descriptors and runs all of them simultaneously
+// via Promise.all — total time equals the slowest query, not the sum of all.
+global.exports('parallel', (
+  queries: ParallelEntry[],
+  cb: CFXCallback,
+  invokingResource = GetInvokingResource(),
+  isPromise?: boolean
+) => {
+  rawParallel(invokingResource, queries, cb, isPromise);
+});
+
+global.exports('parallel_async', (
+  queries: ParallelEntry[],
+  invokingResource = GetInvokingResource()
+) => {
+  return new Promise((resolve, reject) => {
+    rawParallel(invokingResource, queries, (results: any, err?: string) => {
+      if (err) return reject(new Error(err));
+      resolve(results);
+    }, true);
+  });
+});
