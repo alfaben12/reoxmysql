@@ -16,7 +16,7 @@ interface BatchEntry {
 }
 
 // Writes are grouped by SQL string. All entries that arrive in the same
-// event-loop tick share one setImmediate flush — they are then dispatched
+// event-loop tick share one queueMicrotask flush — they are then dispatched
 // as a parallel worker pool so each row gets its own pool connection while
 // the concurrency cap (getLiveBatchLimit) keeps SELECT headroom intact.
 const _pending = new Map<string, BatchEntry[]>();
@@ -35,7 +35,7 @@ export function enqueueWrite(
 
   if (!_flushScheduled) {
     _flushScheduled = true;
-    setImmediate(flushAll);
+    queueMicrotask(flushAll);
   }
 }
 
@@ -67,7 +67,7 @@ async function runBatch(query: string, entries: BatchEntry[]): Promise<void> {
         conn.release();
         if (e.cb) {
           const parsed = parseResponse(type, result);
-          setImmediate(() => { try { e.cb!(parsed); } catch {} });
+          try { e.cb!(parsed); } catch {}
         }
       } catch (err: any) {
         conn.release();

@@ -141,7 +141,7 @@ export const rawExecute = async (
 
       padValues(values, placeholders);
 
-      const startTime = !hasProfiler && performance.now();
+      const startTime = hasProfiler ? 0 : performance.now();
       const result = await connection.execute(query, values);
 
       if (Array.isArray(result) && result.length > 1) {
