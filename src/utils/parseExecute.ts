@@ -14,7 +14,11 @@ export function getExecuteMeta(query: string): ExecuteMeta {
   if (typeof query !== 'string') throw new Error(`Expected query to be a string but received ${typeof query} instead.`);
 
   let meta = _executeMetaCache.get(query);
-  if (meta !== undefined) return meta;
+  if (meta !== undefined) {
+    _executeMetaCache.delete(query);
+    _executeMetaCache.set(query, meta);
+    return meta;
+  }
 
   const spaceIdx = query.indexOf(' ');
   let type: QueryType;
@@ -33,7 +37,9 @@ export function getExecuteMeta(query: string): ExecuteMeta {
   }
 
   meta = { type, placeholders };
-  if (_executeMetaCache.size >= EXECUTE_META_CACHE_MAX) _executeMetaCache.clear();
+  if (_executeMetaCache.size >= EXECUTE_META_CACHE_MAX) {
+    _executeMetaCache.delete(_executeMetaCache.keys().next().value!);
+  }
   _executeMetaCache.set(query, meta);
   return meta;
 }

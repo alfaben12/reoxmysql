@@ -7,6 +7,8 @@ export let writePool: any;
 // keep `pool` export for any consumer that still references it directly
 export { writePool as pool };
 export let dbVersion = '';
+export let readLimit = 0;
+export let writeLimit = 0;
 
 let _poolReadyResolve: (() => void) | null = null;
 export const poolReady = new Promise<void>((resolve) => {
@@ -37,8 +39,8 @@ export async function createConnectionPool() {
 
   // Read pool gets 60% of connections, write pool gets the rest.
   // Both limits are tunable via convars so operators can adjust the ratio.
-  const readLimit  = GetConvarInt('re_mysql_read_connections',  Math.ceil(connectionLimit * 0.6));
-  const writeLimit = GetConvarInt('re_mysql_write_connections', connectionLimit - readLimit);
+  readLimit  = GetConvarInt('re_mysql_read_connections',  Math.ceil(connectionLimit * 0.6));
+  writeLimit = GetConvarInt('re_mysql_write_connections', connectionLimit - readLimit);
 
   try {
     if (mysql_connector === 'mariadb') {
