@@ -61,7 +61,7 @@ export const rawParallel = async (
     else                                  readBucket.push({ i, entry: queries[i] });
   }
 
-  function makeWorkerPool(
+  async function makeWorkerPool(
     bucket: Array<{ i: number; entry: ParallelEntry }>,
     cap: number
   ): Promise<void> {
@@ -89,7 +89,7 @@ export const rawParallel = async (
         });
       }
     };
-    return Promise.all(Array.from({ length: Math.min(cap, bucket.length) }, worker)).then(() => {});
+    await Promise.all(Array.from({ length: Math.min(cap, bucket.length) }, worker));
   }
 
   try {
