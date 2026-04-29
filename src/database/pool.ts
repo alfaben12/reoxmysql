@@ -31,16 +31,24 @@ function attachIsolationListener(dbPool: any) {
 }
 
 export async function createConnectionPool() {
-  const config = getConnectionOptions();
-  const connectionLimit = GetConvarInt('re_mysql_connection_limit', 25);
-  const queueLimit      = GetConvarInt('re_mysql_queue_limit', 0);
-  const maxIdle         = GetConvarInt('re_mysql_max_idle_connections', connectionLimit);
-  const idleTimeout     = GetConvarInt('re_mysql_idle_timeout', 60000);
+  const config      = getConnectionOptions();
+  const queueLimit  = GetConvarInt('re_mysql_queue_limit', 0);
+  const maxIdle     = GetConvarInt('re_mysql_max_idle_connections', 0);
+  const idleTimeout = GetConvarInt('re_mysql_idle_timeout', 60000);
 
-  // Read pool gets 60% of connections, write pool gets the rest.
-  // Both limits are tunable via convars so operators can adjust the ratio.
-  readLimit  = GetConvarInt('re_mysql_read_connections',  Math.ceil(connectionLimit * 0.6));
-  writeLimit = GetConvarInt('re_mysql_write_connections', connectionLimit - readLimit);
+  // re_mysql_read_connections / re_mysql_write_connections are the only pool-size
+  // convars. Default 0 = no connection limit (driver-unlimited). Operators SHOULD
+  // set these for production — without them the pool grows unbounded under load.
+  readLimit  = GetConvarInt('re_mysql_read_connections',  0);
+  writeLimit = GetConvarInt('re_mysql_write_connections', 0);
+
+  const readStr  = readLimit  === 0 ? 'unlimited' : String(readLimit);
+  const writeStr = writeLimit === 0 ? 'unlimited' : String(writeLimit);
+
+  // Warm-up count: for limited pools cap below pool size; for unlimited pools
+  // pre-open a fixed small count so first real queries hit warm connections.
+  const warmRead  = readLimit  === 0 ? 3 : Math.min(3, readLimit  - 1);
+  const warmWrite = writeLimit === 0 ? 2 : Math.min(2, writeLimit);
 
   try {
     if (mysql_connector === 'mariadb') {
@@ -62,13 +70,13 @@ export async function createConnectionPool() {
         idleTimeout:       Math.round(idleTimeout / 1000),
       };
 
+      // connectionLimit: 0 = unlimited in mariadb
       readPool  = mariadb.createPool({ ...mariadbBase, connectionLimit: readLimit });
       writePool = mariadb.createPool({ ...mariadbBase, connectionLimit: writeLimit });
 
       attachIsolationListener(readPool);
       attachIsolationListener(writePool);
 
-      // Verify connectivity once via read pool
       const testConn = await readPool.getConnection();
       const rows = await testConn.query('SELECT VERSION() as version');
       await testConn.release();
@@ -76,29 +84,29 @@ export async function createConnectionPool() {
 
       console.log(`${dbVersion} ^2Database server connection established!^0`);
       console.log(
-        `^2Pool: read=${readLimit} write=${writeLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${mariadbBase.prepareCacheSize}, [mariadb]^0`
+        `^2Pool: read=${readStr} write=${writeStr}, idleTimeout: ${idleTimeout}ms, maxStmt: ${mariadbBase.prepareCacheSize}, [mariadb]^0`
       );
 
-      // Warm up: pre-open a handful of connections so the first real queries
-      // don't pay the TCP + auth cold-start penalty (typically 50-150 ms each).
-      await warmUpPool(readPool,  Math.min(3, readLimit  - 1));
-      await warmUpPool(writePool, Math.min(2, writeLimit));
+      await warmUpPool(readPool,  warmRead);
+      await warmUpPool(writePool, warmWrite);
 
       if ((config as any).multipleStatements) {
         console.warn(`multipleStatements is enabled. Used incorrectly, this option may cause SQL injection.`);
       }
     } else {
-      const baseConfig = {
+      // connectionLimit: 0 = unlimited in mysql2
+      // maxIdle: omit (pass undefined) when 0 so mysql2 uses its own default
+      const baseConfig: any = {
         ...config,
         waitForConnections: true,
         queueLimit,
         idleTimeout,
-        enableKeepAlive: true,
+        enableKeepAlive:       true,
         keepAliveInitialDelay: 0,
       };
 
-      readPool  = createPool({ ...baseConfig, connectionLimit: readLimit,  maxIdle: Math.ceil(maxIdle * 0.6) });
-      writePool = createPool({ ...baseConfig, connectionLimit: writeLimit, maxIdle: maxIdle - Math.ceil(maxIdle * 0.6) });
+      readPool  = createPool({ ...baseConfig, connectionLimit: readLimit,  ...(maxIdle > 0 && { maxIdle: Math.ceil(maxIdle * 0.6) }) });
+      writePool = createPool({ ...baseConfig, connectionLimit: writeLimit, ...(maxIdle > 0 && { maxIdle: maxIdle - Math.ceil(maxIdle * 0.6) }) });
 
       attachIsolationListener(readPool);
       attachIsolationListener(writePool);
@@ -108,13 +116,11 @@ export async function createConnectionPool() {
 
       console.log(`${dbVersion} ^2Database server connection established!^0`);
       console.log(
-        `^2Pool: read=${readLimit} write=${writeLimit}, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${config.maxPreparedStatements ?? 500}, gracefulEnd: ${config.gracefulEnd ?? true}^0`
+        `^2Pool: read=${readStr} write=${writeStr}, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${config.maxPreparedStatements ?? 500}, gracefulEnd: ${config.gracefulEnd ?? true}^0`
       );
 
-      // Warm up: pre-open a handful of connections so the first real queries
-      // don't pay the TCP + auth cold-start penalty (typically 50-150 ms each).
-      await warmUpPool(readPool,  Math.min(3, readLimit  - 1));
-      await warmUpPool(writePool, Math.min(2, writeLimit));
+      await warmUpPool(readPool,  warmRead);
+      await warmUpPool(writePool, warmWrite);
 
       if (config.multipleStatements) {
         console.warn(`multipleStatements is enabled. Used incorrectly, this option may cause SQL injection.`);
@@ -141,11 +147,14 @@ export async function createConnectionPool() {
   }
 }
 
-// Adaptive batch concurrency cap — reads live idle count from the write pool
-// because batch operations (rawExecute parallel, tickBatcher) are always writes.
+// Adaptive batch concurrency cap — uses module-level writeLimit (set once at
+// pool init from re_mysql_write_connections) so no convar re-read per call.
 export function getLiveBatchLimit(paramCount: number): number {
-  const writeLimit = GetConvarInt('re_mysql_write_connections',
-    Math.ceil(GetConvarInt('re_mysql_connection_limit', 25) * 0.4));
+  // Unlimited write pool — spawn one worker per param set.
+  if (writeLimit === 0) return paramCount;
+
+  // Full batch: use the entire write pool — no need to check idle count.
+  if (paramCount >= writeLimit) return writeLimit;
 
   let idleCount: number;
   try {
@@ -164,5 +173,6 @@ export function getLiveBatchLimit(paramCount: number): number {
     idleCount = writeLimit;
   }
 
-  return Math.min(Math.max(4, Math.floor(idleCount * 0.6)), paramCount);
+  // No hard floor — pool handles backpressure via waitForConnections:true.
+  return Math.min(Math.max(1, Math.floor(idleCount * 0.8)), paramCount);
 }
