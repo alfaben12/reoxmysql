@@ -3,6 +3,8 @@ import { rawQuery, rawExecute, rawTransaction, readPool, poolReady } from './dat
 import { startTransaction } from 'database/startTransaction';
 import { rawDefer } from 'database/rawDefer';
 import { rawParallel, type ParallelEntry } from 'database/rawParallel';
+import ghmatti from './compatibility/ghmattimysql';
+import mysqlAsync from './compatibility/mysql-async';
 import('./update');
 
 const MySQL = {} as Record<string, Function>;
@@ -129,6 +131,17 @@ MySQL.deferInsert = (
   rawDefer(invokingResource, query, parameters, cb, isPromise);
 };
 
+MySQL.store = (query: string, cb: Function) => {
+  cb(query);
+};
+
+MySQL.execute = MySQL.query;
+MySQL.fetch = MySQL.query;
+
+function provide(resourceName: string, method: string, cb: Function) {
+  on(`__cfx_export_${resourceName}_${method}`, (setCb: Function) => setCb(cb));
+}
+
 for (const key in MySQL) {
   const exp = MySQL[key];
 
@@ -149,6 +162,18 @@ for (const key in MySQL) {
 
   global.exports(key, exp);
   global.exports(`${key}_async`, async_exp);
+  global.exports(`${key}Sync`, async_exp);
+
+  let alias = (ghmatti as any)[key];
+  if (alias) {
+    provide('ghmattimysql', alias, exp);
+    provide('ghmattimysql', `${alias}Sync`, async_exp);
+  }
+
+  alias = (mysqlAsync as any)[key];
+  if (alias) {
+    provide('mysql-async', alias, exp);
+  }
 }
 
 // MySQL.parallel is registered outside the loop because its signature differs

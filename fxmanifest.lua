@@ -25,6 +25,9 @@ files {
 
 ui_page 'web/build/index.html'
 
+provide 'mysql-async'
+provide 'ghmattimysql'
+
 convar_category 'ReoxMySQL' {
 	'Configuration',
 	{
