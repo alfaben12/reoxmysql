@@ -1,4 +1,4 @@
-import { mysql_debug, mysql_log_size, mysql_slow_query_warning, mysql_ui } from '../config';
+import { mysql_connector, mysql_debug, mysql_log_size, mysql_slow_query_warning, mysql_ui } from '../config';
 import type { CFXCallback, CFXParameters } from '../types';
 import { dbVersion } from '../database';
 
@@ -32,7 +32,7 @@ export function logError(
 ) {
   const message = typeof err === 'object' ? err.message : err.replace(/SCRIPT ERROR: citizen:[\w\/\.]+:\d+[:\s]+/, '');
 
-  const output = `${invokingResource} was unable to execute a query!${query ? `\n${`Query: ${query}`}` : ''}${
+  const output = `[${mysql_connector}] ${invokingResource} was unable to execute a query!${query ? `\n${`Query: ${query}`}` : ''}${
     includeParameters ? `\n${JSON.stringify(parameters)}` : ''
   }\n${message}`;
 
@@ -90,7 +90,7 @@ export const logQuery = (
     (mysql_debug && (!Array.isArray(mysql_debug) || mysql_debug.includes(invokingResource)))
   ) {
     console.log(
-      `${dbVersion} ^3${invokingResource} took ${executionTime.toFixed(4)}ms to execute a query!\n${query}${
+      `[${mysql_connector}] ${dbVersion} ^3${invokingResource} took ${executionTime.toFixed(4)}ms to execute a query!\n${query}${
         parameters ? ` ${JSON.stringify(parameters)}` : ''
       }^0`
     );
