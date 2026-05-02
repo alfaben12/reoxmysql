@@ -31,23 +31,23 @@ function attachIsolationListener(dbPool: any) {
 }
 
 export async function createConnectionPool() {
-  const config      = getConnectionOptions();
-  const queueLimit  = GetConvarInt('re_mysql_queue_limit', 0);
-  const maxIdle     = GetConvarInt('re_mysql_max_idle_connections', 0);
+  const config = getConnectionOptions();
+  const queueLimit = GetConvarInt('re_mysql_queue_limit', 0);
+  const maxIdle = GetConvarInt('re_mysql_max_idle_connections', 0);
   const idleTimeout = GetConvarInt('re_mysql_idle_timeout', 60000);
 
   // re_mysql_read_connections / re_mysql_write_connections are the only pool-size
   // convars. Default 0 = no connection limit (driver-unlimited). Operators SHOULD
   // set these for production — without them the pool grows unbounded under load.
-  readLimit  = GetConvarInt('re_mysql_read_connections',  0);
+  readLimit = GetConvarInt('re_mysql_read_connections', 0);
   writeLimit = GetConvarInt('re_mysql_write_connections', 0);
 
-  const readStr  = readLimit  === 0 ? 'unlimited' : String(readLimit);
+  const readStr = readLimit === 0 ? 'unlimited' : String(readLimit);
   const writeStr = writeLimit === 0 ? 'unlimited' : String(writeLimit);
 
   // Warm-up count: for limited pools cap below pool size; for unlimited pools
   // pre-open a fixed small count so first real queries hit warm connections.
-  const warmRead  = readLimit  === 0 ? 3 : Math.min(3, readLimit  - 1);
+  const warmRead = readLimit === 0 ? 3 : Math.min(3, readLimit - 1);
   const warmWrite = writeLimit === 0 ? 2 : Math.min(2, writeLimit);
 
   try {
@@ -55,23 +55,23 @@ export async function createConnectionPool() {
       const mariadb = require('mariadb');
 
       const mariadbBase: any = {
-        host:              config.host,
-        port:              config.port,
-        user:              config.user,
-        password:          config.password,
-        database:          config.database,
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: config.database,
         ...(config.ssl && { ssl: config.ssl }),
-        connectTimeout:    (config as any).connectTimeout ?? 60000,
-        compress:          (config as any).compress ?? false,
+        connectTimeout: (config as any).connectTimeout ?? 60000,
+        compress: (config as any).compress ?? false,
         namedPlaceholders: false,
-        insertIdAsNumber:  true,
-        bigIntAsNumber:    true,
-        prepareCacheSize:  (config as any).maxPreparedStatements ?? 500,
-        idleTimeout:       Math.round(idleTimeout / 1000),
+        insertIdAsNumber: true,
+        bigIntAsNumber: true,
+        prepareCacheSize: (config as any).maxPreparedStatements ?? 500,
+        idleTimeout: Math.round(idleTimeout / 1000),
       };
 
       // connectionLimit: 0 = unlimited in mariadb
-      readPool  = mariadb.createPool({ ...mariadbBase, connectionLimit: readLimit });
+      readPool = mariadb.createPool({ ...mariadbBase, connectionLimit: readLimit });
       writePool = mariadb.createPool({ ...mariadbBase, connectionLimit: writeLimit });
 
       attachIsolationListener(readPool);
@@ -84,10 +84,10 @@ export async function createConnectionPool() {
 
       console.log(`${dbVersion} ^2Database server connection established!^0`);
       console.log(
-        `^2Pool: read=${readStr} write=${writeStr}, idleTimeout: ${idleTimeout}ms, maxStmt: ${mariadbBase.prepareCacheSize}, [mariadb]^0`
+        `^2[mariadb] Pool: read=${readStr} write=${writeStr}, idleTimeout: ${idleTimeout}ms, maxStmt: ${mariadbBase.prepareCacheSize}^0`
       );
 
-      await warmUpPool(readPool,  warmRead);
+      await warmUpPool(readPool, warmRead);
       await warmUpPool(writePool, warmWrite);
 
       if ((config as any).multipleStatements) {
@@ -101,12 +101,20 @@ export async function createConnectionPool() {
         waitForConnections: true,
         queueLimit,
         idleTimeout,
-        enableKeepAlive:       true,
+        enableKeepAlive: true,
         keepAliveInitialDelay: 0,
       };
 
-      readPool  = createPool({ ...baseConfig, connectionLimit: readLimit,  ...(maxIdle > 0 && { maxIdle: Math.ceil(maxIdle * 0.6) }) });
-      writePool = createPool({ ...baseConfig, connectionLimit: writeLimit, ...(maxIdle > 0 && { maxIdle: maxIdle - Math.ceil(maxIdle * 0.6) }) });
+      readPool = createPool({
+        ...baseConfig,
+        connectionLimit: readLimit,
+        ...(maxIdle > 0 && { maxIdle: Math.ceil(maxIdle * 0.6) }),
+      });
+      writePool = createPool({
+        ...baseConfig,
+        connectionLimit: writeLimit,
+        ...(maxIdle > 0 && { maxIdle: maxIdle - Math.ceil(maxIdle * 0.6) }),
+      });
 
       attachIsolationListener(readPool);
       attachIsolationListener(writePool);
@@ -116,10 +124,10 @@ export async function createConnectionPool() {
 
       console.log(`${dbVersion} ^2Database server connection established!^0`);
       console.log(
-        `^2Pool: read=${readStr} write=${writeStr}, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${config.maxPreparedStatements ?? 500}, gracefulEnd: ${config.gracefulEnd ?? true}^0`
+        `^2[mysql2] Pool: read=${readStr} write=${writeStr}, queue: ${queueLimit === 0 ? 'unlimited' : queueLimit}, idleTimeout: ${idleTimeout}ms, maxStmt: ${config.maxPreparedStatements ?? 500}, gracefulEnd: ${config.gracefulEnd ?? true}^0`
       );
 
-      await warmUpPool(readPool,  warmRead);
+      await warmUpPool(readPool, warmRead);
       await warmUpPool(writePool, warmWrite);
 
       if (config.multipleStatements) {
@@ -161,9 +169,8 @@ export function getLiveBatchLimit(paramCount: number): number {
     if (!writePool) {
       idleCount = writeLimit;
     } else if (mysql_connector === 'mariadb') {
-      idleCount = typeof (writePool as any).idleConnections === 'function'
-        ? (writePool as any).idleConnections()
-        : writeLimit;
+      idleCount =
+        typeof (writePool as any).idleConnections === 'function' ? (writePool as any).idleConnections() : writeLimit;
     } else {
       idleCount = Array.isArray((writePool as any)._freeConnections)
         ? (writePool as any)._freeConnections.length
