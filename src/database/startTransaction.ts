@@ -21,7 +21,7 @@ export const startTransaction = async (
   cb?: CFXCallback,
   isPromise?: boolean
 ) => {
-  using conn: MySql = await getConnection();
+  using conn = await getConnection(undefined, 'write');
   let response: boolean | null = false;
   let closed = false;
 

@@ -1,16 +1,20 @@
 import type { CFXCallback, CFXParameters, TransactionQuery } from './types';
-import { rawQuery, rawExecute, rawTransaction, pool, poolReady } from './database';
+import { rawQuery, rawExecute, rawTransaction, readPool, poolReady } from './database';
 import { startTransaction } from 'database/startTransaction';
+import { rawDefer } from 'database/rawDefer';
+import { rawParallel, type ParallelEntry } from 'database/rawParallel';
+import ghmatti from './compatibility/ghmattimysql';
+import mysqlAsync from './compatibility/mysql-async';
 import('./update');
 
 const MySQL = {} as Record<string, Function>;
 
 MySQL.isReady = () => {
-  return pool ? true : false;
+  return readPool ? true : false;
 };
 
 MySQL.awaitConnection = async () => {
-  if (!pool) await poolReady;
+  if (!readPool) await poolReady;
 
   return true;
 };
@@ -103,6 +107,41 @@ MySQL.rawExecute = (
   rawExecute(invokingResource, query, parameters, cb, isPromise);
 };
 
+// Tick-batched write variants — identical API to MySQL.update / MySQL.insert but
+// coalesce writes to the same SQL within one event-loop tick into a single parallel
+// batch.  Use for fire-and-forget saves (player position, health, stats) where
+// immediate execution order relative to other queries is not required.
+MySQL.deferUpdate = (
+  query: string,
+  parameters: CFXParameters,
+  cb: CFXCallback,
+  invokingResource = GetInvokingResource(),
+  isPromise?: boolean
+) => {
+  rawDefer(invokingResource, query, parameters, cb, isPromise);
+};
+
+MySQL.deferInsert = (
+  query: string,
+  parameters: CFXParameters,
+  cb: CFXCallback,
+  invokingResource = GetInvokingResource(),
+  isPromise?: boolean
+) => {
+  rawDefer(invokingResource, query, parameters, cb, isPromise);
+};
+
+MySQL.store = (query: string, cb: Function) => {
+  cb(query);
+};
+
+MySQL.execute = MySQL.query;
+MySQL.fetch = MySQL.query;
+
+function provide(resourceName: string, method: string, cb: Function) {
+  on(`__cfx_export_${resourceName}_${method}`, (setCb: Function) => setCb(cb));
+}
+
 for (const key in MySQL) {
   const exp = MySQL[key];
 
@@ -123,4 +162,41 @@ for (const key in MySQL) {
 
   global.exports(key, exp);
   global.exports(`${key}_async`, async_exp);
+  global.exports(`${key}Sync`, async_exp);
+
+  let alias = (ghmatti as any)[key];
+  if (alias) {
+    provide('ghmattimysql', alias, exp);
+    provide('ghmattimysql', `${alias}Sync`, async_exp);
+  }
+
+  alias = (mysqlAsync as any)[key];
+  if (alias) {
+    provide('mysql-async', alias, exp);
+  }
 }
+
+// MySQL.parallel is registered outside the loop because its signature differs
+// from the standard (query, params, cb, resource, isPromise) pattern.
+// It accepts an array of query descriptors and runs all of them simultaneously
+// via Promise.all — total time equals the slowest query, not the sum of all.
+global.exports('parallel', (
+  queries: ParallelEntry[],
+  cb: CFXCallback,
+  invokingResource = GetInvokingResource(),
+  isPromise?: boolean
+) => {
+  rawParallel(invokingResource, queries, cb, isPromise);
+});
+
+global.exports('parallel_async', (
+  queries: ParallelEntry[],
+  invokingResource = GetInvokingResource()
+) => {
+  return new Promise((resolve, reject) => {
+    rawParallel(invokingResource, queries, (results: any, err?: string) => {
+      if (err) return reject(new Error(err));
+      resolve(results);
+    }, true);
+  });
+});

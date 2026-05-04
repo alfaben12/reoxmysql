@@ -152,4 +152,55 @@ function MySQL.startTransaction(cb)
 	return oxmysql:startTransaction(cb, resourceName)
 end
 
+-- MySQL.parallel — dispatch multiple queries simultaneously.
+-- Every entry in the queries table runs concurrently on its own pool connection.
+-- Total wait time = slowest individual query, not the sum of all queries.
+-- If any query fails the entire call fails and cb receives nil.
+--
+-- Entry fields:
+--   query   (string, required) — SQL statement
+--   params  (table,  optional) — positional parameters
+--   type    (string, optional) — 'query'|'single'|'scalar'|'insert'|'update'
+--                                defaults to 'query' (full row array)
+--
+-- Examples:
+--
+--   -- Callback style
+--   MySQL.parallel({
+--     { query = 'SELECT * FROM players  WHERE id = ?',    params = {playerId} },
+--     { query = 'SELECT * FROM vehicles WHERE owner = ?', params = {playerId}, type = 'query' },
+--     { query = 'SELECT coins FROM wallet WHERE id = ?',  params = {playerId}, type = 'scalar' },
+--   }, function(results)
+--     local rows    = results[1]
+--     local cars    = results[2]
+--     local coins   = results[3]
+--   end)
+--
+--   -- Await style (suspends current coroutine, non-blocking for other threads)
+--   local results = MySQL.parallel.await({
+--     { query = 'SELECT * FROM players  WHERE id = ?',    params = {playerId} },
+--     { query = 'SELECT * FROM vehicles WHERE owner = ?', params = {playerId} },
+--   })
+--   local rows = results[1]
+--   local cars = results[2]
+
+local function parallelAwait(queries)
+	local p = promise.new()
+
+	oxmysql.parallel(nil, queries, function(results, err)
+		if err then return p:reject(err) end
+		p:resolve(results)
+	end, resourceName, true)
+
+	return Await(p)
+end
+
+MySQL.parallel = setmetatable({
+	await = parallelAwait
+}, {
+	__call = function(_, queries, cb)
+		return oxmysql.parallel(nil, queries, cb, resourceName, options.return_callback_errors)
+	end
+})
+
 _ENV.MySQL = MySQL

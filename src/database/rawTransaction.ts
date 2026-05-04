@@ -5,6 +5,7 @@ import { parseTransaction } from '../utils/parseTransaction';
 import { setCallback } from '../utils/setCallback';
 import { performance } from 'perf_hooks';
 import { profileBatchStatements, runProfiler } from 'profiler';
+import { mysql_debug } from 'config';
 
 const transactionError = (queries: { query: string; params?: CFXParameters }[], parameters: CFXParameters) => {
   return `${queries.map((query) => `${query.query} ${JSON.stringify(query.params || [])}`).join('\n')}\n${JSON.stringify(
@@ -28,20 +29,20 @@ export const rawTransaction = async (
     return logError(invokingResource, cb, isPromise, err);
   }
 
-  using connection = await getConnection();
+  using connection = await getConnection(undefined, 'write');
 
   if (!connection) return;
 
   let response = false;
 
   try {
-    const hasProfiler = await runProfiler(connection, invokingResource);
+    const hasProfiler = mysql_debug && (await runProfiler(connection, invokingResource));
     await connection.beginTransaction();
     const transactionsLength = transactions.length;
 
     for (let i = 0; i < transactionsLength; i++) {
       const transaction = transactions[i];
-      const startTime = !hasProfiler && performance.now();
+      const startTime = hasProfiler ? 0 : performance.now();
       await connection.query(transaction.query, transaction.params);
 
       if (hasProfiler && ((i > 0 && i % 100 === 0) || i === transactionsLength - 1)) {

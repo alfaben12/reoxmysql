@@ -27,12 +27,15 @@ export const rawQuery = async (
     return logError(invokingResource, cb, isPromise, err, query, parameters);
   }
 
-  using connection = await getConnection(connectionId);
+  // Route to the correct pool: writes (INSERT/UPDATE) go to writePool so they
+  // never block reads. Everything else (SELECT, scalar, single) goes to readPool.
+  const poolType = (type === 'insert' || type === 'update') ? 'write' : 'read';
+  using connection = await getConnection(connectionId, poolType);
 
   if (!connection) return;
 
   try {
-    const hasProfiler = mysql_debug && await runProfiler(connection, invokingResource);
+    const hasProfiler = mysql_debug && (await runProfiler(connection, invokingResource));
     // Only measure time when something will actually consume it: profiler,
     // slow-query warning, or the in-game UI.  Skipping performance.now() on
     // the fast path removes a per-query call pair at high QPS.
@@ -50,16 +53,22 @@ export const rawQuery = async (
       const elapsed = performance.now() - startTime;
       // Inline gate: skip the logQuery call entirely on the fast path so we
       // don't pay function-call + argument-marshal overhead on every SELECT.
-      if (elapsed >= mysql_slow_query_warning || mysql_ui)
-        logQuery(invokingResource, query, elapsed, parameters);
+      if (elapsed >= mysql_slow_query_warning || mysql_ui) logQuery(invokingResource, query, elapsed, parameters);
     }
 
     validateResultSet(invokingResource, query, result);
 
-    if (!cb) return parseResponse(type, result);
+    const parsed = parseResponse(type, result);
+
+    // Release back to pool before crossing into Lua. cb() is synchronous across
+    // the JS→Lua bridge — the connection would otherwise sit idle for the entire
+    // duration of Lua execution. release() is idempotent; using-dispose is a no-op.
+    connection.release();
+
+    if (!cb) return parsed;
 
     try {
-      cb(parseResponse(type, result));
+      cb!(parsed);
     } catch (err) {
       if (typeof err === 'string') {
         if (err.includes('SCRIPT ERROR:')) return console.log(err);

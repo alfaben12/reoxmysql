@@ -1,24 +1,15 @@
 import { logError, logQuery } from '../logger';
 import { CFXCallback, CFXParameters, QueryType } from '../types';
 import { parseResponse } from '../utils/parseResponse';
-import { executeType, parseExecute } from '../utils/parseExecute';
+import { getExecuteMeta, parseExecute } from '../utils/parseExecute';
 import { getConnection } from './connection';
+import { getLiveBatchLimit } from './pool';
 import { setCallback } from '../utils/setCallback';
 import { performance } from 'perf_hooks';
 import validateResultSet from 'utils/validateResultSet';
 import { RowDataPacket } from 'mysql2';
 import { profileBatchStatements, runProfiler } from 'profiler';
 import { mysql_debug, mysql_slow_query_warning, mysql_ui } from 'config';
-
-// Lazily computed cap: at most 60 % of the pool may be held by one batch call.
-// This guarantees SELECT queries (rawQuery) always have headroom in the pool.
-let _batchConcurrencyLimit = 0;
-function getBatchLimit(): number {
-  if (!_batchConcurrencyLimit) {
-    _batchConcurrencyLimit = Math.max(4, Math.floor(GetConvarInt('re_mysql_connection_limit', 25) * 0.6));
-  }
-  return _batchConcurrencyLimit;
-}
 
 function padValues(values: any, placeholders: number) {
   if (values && placeholders > values.length) {
@@ -78,21 +69,23 @@ export const rawExecute = async (
   let placeholders: number;
 
   try {
-    type = executeType(query);
-    placeholders = query.split('?').length - 1;
+    ({ type, placeholders } = getExecuteMeta(query));
     parameters = parseExecute(placeholders, parameters);
   } catch (err: any) {
     return logError(invokingResource, cb, isPromise, err, query, parameters);
   }
 
+  // null type = SELECT-style execute → read pool; insert/update/execute → write pool
+  const poolType = type === null ? 'read' : 'write';
+
   // ── Parallel batch path ──────────────────────────────────────────────────
   // When debug/profiler is off and there is no pinned connection, execute each
   // parameter set concurrently using its own pool connection.  Concurrency is
-  // capped at getBatchLimit() (≤60 % of pool size) so that SELECT queries
-  // (rawQuery) always have headroom and are never starved by a large batch.
+  // capped by getLiveBatchLimit() — 60% of currently idle connections — so the
+  // cap shrinks automatically under load and SELECT queries always have headroom.
   if (!mysql_debug && !connectionId && parameters.length > 1) {
     try {
-      const concurrency = Math.min(getBatchLimit(), parameters.length);
+      const concurrency = getLiveBatchLimit(parameters.length);
       const results: any[] = new Array(parameters.length);
       let batchIndex = 0;
 
@@ -104,7 +97,7 @@ export const rawExecute = async (
           const values = parameters[i];
           padValues(values, placeholders);
 
-          const conn = await getConnection();
+          const conn = await getConnection(undefined, poolType);
           try {
             const startTime = performance.now();
             const result = await conn.execute(query, values);
@@ -124,7 +117,7 @@ export const rawExecute = async (
 
       if (!cb) return response.length === 1 ? response[0] : response;
 
-      invokeCallback(cb, response, type, unpack, invokingResource);
+      invokeCallback(cb!, response, type, unpack, invokingResource);
     } catch (err: any) {
       logError(invokingResource, cb, isPromise, err, query, parameters);
     }
@@ -134,12 +127,12 @@ export const rawExecute = async (
   // ── Sequential path ──────────────────────────────────────────────────────
   // Used when: profiler is active (debug), a specific connection is pinned
   // (connectionId), or there is only a single parameter set.
-  using connection = await getConnection(connectionId);
+  using connection = await getConnection(connectionId, poolType);
 
   if (!connection) return;
 
   try {
-    const hasProfiler = mysql_debug && await runProfiler(connection, invokingResource);
+    const hasProfiler = mysql_debug && (await runProfiler(connection, invokingResource));
     const parametersLength = parameters.length == 0 ? 1 : parameters.length;
     const response = [] as any[];
 
@@ -148,7 +141,7 @@ export const rawExecute = async (
 
       padValues(values, placeholders);
 
-      const startTime = !hasProfiler && performance.now();
+      const startTime = hasProfiler ? 0 : performance.now();
       const result = await connection.execute(query, values);
 
       if (Array.isArray(result) && result.length > 1) {
@@ -160,15 +153,18 @@ export const rawExecute = async (
       if (hasProfiler && ((index > 0 && index % 100 === 0) || index === parametersLength - 1)) {
         await profileBatchStatements(connection, invokingResource, query, parameters, index < 100 ? 0 : index);
       } else if (startTime) {
-        logQuery(invokingResource, query, performance.now() - startTime, values);
+        const elapsed = performance.now() - startTime;
+        if (elapsed >= mysql_slow_query_warning || mysql_ui) logQuery(invokingResource, query, elapsed, values);
       }
 
       validateResultSet(invokingResource, query, result);
     }
 
+    connection.release();
+
     if (!cb) return response.length === 1 ? response[0] : response;
 
-    invokeCallback(cb, response, type, unpack, invokingResource);
+    invokeCallback(cb!, response, type, unpack, invokingResource);
   } catch (err: any) {
     logError(invokingResource, cb, isPromise, err, query, parameters);
   }

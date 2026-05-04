@@ -16,7 +16,10 @@
       "Bash(node:*)",
       "Bash(bun --version)",
       "Bash(bun install:*)",
-      "Bash(./node_modules/.bin/tsc --noEmit -p src/tsconfig.json)"
+      "Bash(./node_modules/.bin/tsc --noEmit -p src/tsconfig.json)",
+      "Bash(find /e/esx-legacy/txData/ESXLegacy_381884.base/resources/[ip-zrav-ben]/reoxmysql -type f \\\\\\( -name \"*.ts\" -o -name \"*.js\" -o -name \"*.lua\" \\\\\\))",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(~/.bun/bin/bun run:*)"
     ]
   }
 }

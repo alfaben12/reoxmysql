@@ -123,6 +123,8 @@ export function getConnectionOptions(): ConnectionOptions {
   };
 }
 
+export const mysql_connector = GetConvar('re_mysql_connector', 'mysql2');
+
 RegisterCommand(
   'reoxmysql_debug',
   (source: number, args: string[]) => {

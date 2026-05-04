@@ -1,14 +1,14 @@
 import { setDebug } from '../config';
 import { sleep } from '../utils/sleep';
-import { pool, createConnectionPool } from './pool';
+import { readPool, createConnectionPool } from './pool';
 
 setTimeout(async () => {
   setDebug();
 
-  while (!pool) {
+  while (!readPool) {
     await createConnectionPool();
 
-    if (!pool) await sleep(30000);
+    if (!readPool) await sleep(30000);
   }
 });
 
